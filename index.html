@@ -1,0 +1,2012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>KWT News — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.6/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#050c18;
+  --surface:#0c1527;
+  --surface2:#111e35;
+  --border:#1a2d4a;
+  --border2:#243a59;
+  --accent:#F5A623;
+  --accent2:#ffb830;
+  --text:#e8edf5;
+  --muted:#8899b4;
+  --dim:#3a4f6a;
+  --danger:#f87171;
+  --success:#34d399;
+  --info:#60a5fa;
+}
+html,body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;min-height:100vh;overflow-x:hidden}
+body{padding-bottom:env(safe-area-inset-bottom)}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+/* Animations */
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes shimmer{0%{background-position:-600px 0}100%{background-position:600px 0}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.93)}to{opacity:1;transform:scale(1)}}
+
+.fade-up{animation:fadeUp .3s ease forwards}
+.fade-in{animation:fadeIn .2s ease forwards}
+.slide-up{animation:slideUp .35s cubic-bezier(.16,1,.3,1) forwards}
+.scale-in{animation:scaleIn .2s ease forwards}
+.pulse{animation:pulse 2s ease infinite}
+.spinner{width:22px;height:22px;border:2.5px solid rgba(245,166,35,.25);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+.shimmer{animation:shimmer 1.5s infinite linear;background:linear-gradient(90deg,var(--surface) 4%,var(--surface2) 25%,var(--surface) 36%);background-size:600px 100%}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.card-sm{background:var(--surface);border:1px solid var(--border);border-radius:12px}
+
+/* Inputs */
+.inp{background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-family:'Outfit',sans-serif;font-size:14px;padding:12px 14px;width:100%;outline:none;transition:border .15s,box-shadow .15s}
+.inp:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,.1)}
+.inp::placeholder{color:var(--dim)}
+select.inp option{background:#0c1527}
+textarea.inp{resize:vertical;min-height:88px}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:10px;font-family:'Outfit',sans-serif;font-weight:600;font-size:14px;cursor:pointer;border:none;transition:all .15s;outline:none}
+.btn:active{transform:scale(.97)}
+.btn-accent{background:var(--accent);color:#050c18;padding:11px 20px}
+.btn-accent:hover{background:var(--accent2);box-shadow:0 4px 20px rgba(245,166,35,.3)}
+.btn-accent:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-ghost{background:transparent;color:var(--muted);border:1.5px solid var(--border);padding:9px 16px}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn-red{background:rgba(248,113,113,.1);color:var(--danger);border:1.5px solid rgba(248,113,113,.2);padding:8px 12px}
+.btn-red:hover{background:rgba(248,113,113,.2)}
+.btn-icon{background:var(--surface2);border:1.5px solid var(--border);color:var(--muted);padding:8px;border-radius:8px}
+.btn-icon:hover{border-color:var(--border2);color:var(--text)}
+
+/* Badge */
+.badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.03em}
+
+/* Toggle */
+.tog{position:relative;width:42px;height:24px;border-radius:12px;cursor:pointer;border:none;transition:background .2s;flex-shrink:0}
+.tog-thumb{position:absolute;top:4px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+
+/* Bottom Nav */
+.bnav{position:fixed;bottom:0;left:0;right:0;background:rgba(5,12,24,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);z-index:50;padding-bottom:env(safe-area-inset-bottom)}
+.bnav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;padding:10px 4px 8px;cursor:pointer;border:none;background:transparent;color:var(--dim);transition:color .15s;font-size:9px;font-weight:600;font-family:'Outfit',sans-serif;letter-spacing:.03em}
+.bnav-item.active{color:var(--accent)}
+.bnav-item .dot{width:4px;height:4px;border-radius:50%;background:var(--accent);margin-top:1px;opacity:0;transition:opacity .15s}
+.bnav-item.active .dot{opacity:1}
+
+/* Desktop sidebar */
+.sidebar{position:fixed;top:0;left:0;height:100vh;width:232px;background:var(--surface);border-right:1px solid var(--border);z-index:50;display:flex;flex-direction:column;overflow:hidden}
+.nav-btn{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;color:var(--muted);transition:all .15s;border:none;background:transparent;width:100%;text-align:left;font-family:'Outfit',sans-serif}
+.nav-btn:hover{background:rgba(245,166,35,.07);color:var(--text)}
+.nav-btn.active{background:rgba(245,166,35,.12);color:var(--accent);font-weight:700}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:200;display:flex;align-items:flex-end;justify-content:center;padding:0;overflow:hidden}
+@media(min-width:600px){
+  .modal-bg{align-items:center;padding:16px}
+}
+.modal{background:var(--surface);border:1px solid var(--border);width:100%;max-width:580px;max-height:92vh;overflow-y:auto;border-radius:20px 20px 0 0;position:relative}
+@media(min-width:600px){.modal{border-radius:20px;max-height:88vh}}
+body.modal-open{overflow:hidden;position:fixed;width:100%}
+
+/* Row */
+.row:hover{background:rgba(255,255,255,.02)}
+
+/* Stat card */
+.stat{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:16px}
+
+/* Main layout */
+@media(min-width:768px){
+  .main-wrap{margin-left:232px}
+  .bnav{display:none}
+  body{padding-bottom:0}
+}
+@media(max-width:767px){
+  .sidebar{display:none}
+  .main-wrap{margin-left:0;padding-bottom:72px}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef, useMemo } = React;
+const { createRoot } = ReactDOM;
+
+// ── Firebase ──────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:"AIzaSyDLRqQ8WRohNDWz_6UgafI7Kn2f8U0KL3c",
+  authDomain:"kwt-news.firebaseapp.com",
+  databaseURL:"https://kwt-news-default-rtdb.firebaseio.com",
+  projectId:"kwt-news",
+  storageBucket:"kwt-news.firebasestorage.app",
+  messagingSenderId:"604704031845",
+  appId:"1:604704031845:web:b835af9ab1872ddd1d728c",
+  measurementId:"G-J161YE3FDP"
+};
+const app = firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+try{ db.settings({experimentalForceLongPolling:true,merge:true}); }catch(e){}
+
+const CLOUDINARY = { cloudName:'debp1kjtm', uploadPreset:'sql_admin', folder:'sql_users', uploadUrl:'https://api.cloudinary.com/v1_1/debp1kjtm/auto/upload' };
+const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','footer'];
+
+// ── Helpers ────────────────────────────────────────────────────
+const fmt = n=>(n||0).toLocaleString();
+const timeAgo = d=>{
+  if(!d)return'—';
+  const s=Math.floor((Date.now()-(d instanceof Date?d:d.toDate?.()||new Date(d)))/1000);
+  if(s<60)return'Just now';if(s<3600)return Math.floor(s/60)+'m ago';
+  if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';
+};
+const fmtDate=d=>{
+  if(!d)return'—';
+  const dt=d instanceof Date?d:d.toDate?.()||new Date(d);
+  return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+};
+const posLabel=p=>({top_banner:'Top Banner',in_feed:'In Feed',sidebar_top:'Sidebar Top',sidebar_bottom:'Sidebar Bottom',footer:'Footer'}[p]||p);
+const ctr=a=>a.impressions?(((a.clicks||0)/a.impressions)*100).toFixed(1)+'%':'0%';
+
+// ── SVG Icons ─────────────────────────────────────────────────
+const Ic = ({n,s=18,c='currentColor'}) => {
+  const p = {
+    grid:<><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
+    news:<><path d="M4 6h16M4 10h16M4 14h10"/><rect x="2" y="3" width="20" height="18" rx="2"/></>,
+    ads:<><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></>,
+    chat:<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>,
+    users:<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
+    bell:<><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></>,
+    cog:<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
+    out:<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
+    plus:<><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+    edit:<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></>,
+    trash:<><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></>,
+    search:<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+    eye:<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
+    eyeoff:<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>,
+    send:<><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>,
+    upload:<><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></>,
+    x:<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    ban:<><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></>,
+    ok:<><polyline points="20 6 9 17 4 12"/></>,
+    warn:<><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+    img:<><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></>,
+    star:<><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></>,
+    refresh:<><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-8.07"/></>,
+    tag:<><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></>,
+    menu:<><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>,
+    phone:<><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.82a16 16 0 0 0 6.29 6.29l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></>,
+    mail:<><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></>,
+  };
+  return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{p[n]}</svg>;
+};
+
+// ── Toast ──────────────────────────────────────────────────────
+const ToastList = ({list}) => (
+  <div style={{position:'fixed',bottom:80,right:16,zIndex:999,display:'flex',flexDirection:'column',gap:8}}>
+    {list.map(t=>(
+      <div key={t.id} className="fade-up" style={{padding:'11px 16px',borderRadius:12,fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:10,boxShadow:'0 8px 32px rgba(0,0,0,.5)',background:t.type==='ok'?'#065f46':t.type==='error'?'#7f1d1d':'#1e3a5f',border:`1px solid ${t.type==='ok'?'#34d399':t.type==='error'?'#f87171':'#60a5fa'}`,color:'#fff',minWidth:200,maxWidth:280}}>
+        <Ic n={t.type==='ok'?'ok':t.type==='error'?'x':'bell'} s={14}/>
+        {t.msg}
+      </div>
+    ))}
+  </div>
+);
+
+const useToast = () => {
+  const [list,setList] = useState([]);
+  const add = useCallback((msg,type='ok')=>{
+    const id=Date.now();
+    setList(p=>[...p,{id,msg,type}]);
+    setTimeout(()=>setList(p=>p.filter(t=>t.id!==id)),3200);
+  },[]);
+  const Toast = ()=><ToastList list={list}/>;
+  return {add,Toast};
+};
+
+// ── Confirm ────────────────────────────────────────────────────
+const Confirm = ({msg,onYes,onNo}) => (
+  <div className="modal-bg scale-in" onClick={onNo}>
+    <div className="card" style={{width:'100%',maxWidth:360,padding:24,margin:16,borderRadius:16}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:'flex',gap:14,alignItems:'flex-start',marginBottom:20}}>
+        <div style={{width:40,height:40,borderRadius:12,background:'rgba(248,113,113,.1)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <Ic n="warn" s={18} c="var(--danger)"/>
+        </div>
+        <div>
+          <p style={{fontWeight:700,fontSize:15,marginBottom:4}}>Confirm Delete</p>
+          <p style={{color:'var(--muted)',fontSize:13,lineHeight:1.5}}>{msg}</p>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+        <button className="btn btn-ghost" onClick={onNo}>Cancel</button>
+        <button className="btn btn-red" style={{fontWeight:700,padding:'9px 18px'}} onClick={onYes}>Delete</button>
+      </div>
+    </div>
+  </div>
+);
+
+// ── Media Upload (Image + Video) ──────────────────────────────
+const ImgUpload = ({value, onChange, label='Image', accept='both'}) => {
+  const [busy, setBusy]       = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [fileType, setFileType] = useState(''); // 'image' | 'video'
+  const [err, setErr]         = useState('');
+  const ref = useRef();
+
+  // Detect if saved URL is a video
+  const isVideoUrl = v => v && (
+    v.includes('/video/upload') ||
+    /\.(mp4|mov|avi|webm|mkv|m4v)(\?|$)/i.test(v)
+  );
+
+  const upload = file => {
+    if (!file) return;
+    setErr('');
+
+    // Decide resource type from MIME
+    const isVideo = file.type.startsWith('video/');
+    setFileType(isVideo ? 'video' : 'image');
+
+    // Max size guard — 100 MB for video, 10 MB for image
+    const maxMB = isVideo ? 100 : 10;
+    if (file.size > maxMB * 1024 * 1024) {
+      setErr(`File too large. Max ${maxMB} MB allowed.`);
+      return;
+    }
+
+    // Use /auto/upload — Cloudinary detects image vs video automatically
+    const endpoint = `https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/auto/upload`;
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', CLOUDINARY.uploadPreset);
+    fd.append('folder', 'sql_users'); // ✅ folder specify karo
+
+    // Use XHR for real upload progress
+    const xhr = new XMLHttpRequest();
+    setBusy(true);
+    setProgress(0);
+
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
+    };
+
+    xhr.onload = () => {
+      setBusy(false);
+      try {
+        const json = JSON.parse(xhr.responseText);
+        if (json.error) { setErr('Cloudinary: ' + json.error.message); return; }
+        onChange(json.secure_url);
+        setProgress(0);
+      } catch(e) { setErr('Upload failed. Try again.'); }
+    };
+
+    xhr.onerror = () => { setBusy(false); setErr('Network error. Check connection.'); };
+
+    xhr.open('POST', endpoint);
+    xhr.send(fd);
+  };
+
+  const handleDrop = e => {
+    e.preventDefault();
+    e.currentTarget.style.borderColor = value ? 'var(--success)' : 'var(--border2)';
+    upload(e.dataTransfer.files[0]);
+  };
+
+  const clear = e => { e.stopPropagation(); onChange(''); setFileType(''); setErr(''); };
+
+  // Accept string for file input
+  const acceptStr = accept === 'image' ? 'image/*' : accept === 'video' ? 'video/*' : 'image/*,video/*';
+
+  const currentIsVideo = isVideoUrl(value) || fileType === 'video';
+
+  return (
+    <div>
+      {label && (
+        <p style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',marginBottom:8}}>
+          {label.toUpperCase()}
+        </p>
+      )}
+
+      <div
+        style={{
+          border:`2px dashed ${err ? 'var(--danger)' : value ? 'var(--success)' : 'var(--border2)'}`,
+          borderRadius:12, padding:16, cursor: busy ? 'default' : 'pointer',
+          background:'var(--surface2)', transition:'border .2s, background .2s'
+        }}
+        onClick={() => { if(!busy) ref.current?.click(); }}
+        onDragOver={e => { e.preventDefault(); if(!busy) e.currentTarget.style.borderColor='var(--accent)'; }}
+        onDragLeave={e => { e.currentTarget.style.borderColor = err?'var(--danger)':value?'var(--success)':'var(--border2)'; }}
+        onDrop={handleDrop}
+      >
+        <input ref={ref} type="file" accept={acceptStr} style={{display:'none'}}
+          onChange={e => upload(e.target.files[0])}/>
+
+        {/* ── Uploading State ── */}
+        {busy ? (
+          <div style={{padding:'8px 0'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+              <div className="spinner" style={{flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <p style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>
+                  Uploading {fileType === 'video' ? 'video' : 'image'}…
+                </p>
+                <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Please wait, don't close this page</p>
+              </div>
+              <span style={{fontSize:14,fontWeight:800,color:'var(--accent)',flexShrink:0}}>{progress}%</span>
+            </div>
+            {/* Progress bar */}
+            <div style={{height:6,background:'var(--border)',borderRadius:999,overflow:'hidden'}}>
+              <div style={{
+                height:'100%', borderRadius:999,
+                background: fileType==='video'
+                  ? 'linear-gradient(90deg,var(--info),var(--accent))'
+                  : 'linear-gradient(90deg,var(--accent),var(--success))',
+                width: progress+'%',
+                transition:'width .3s ease'
+              }}/>
+            </div>
+            {fileType === 'video' && (
+              <p style={{fontSize:10,color:'var(--dim)',marginTop:6,textAlign:'center'}}>
+                🎬 Videos may take a moment — please be patient
+              </p>
+            )}
+          </div>
+
+        ) : value ? (
+          /* ── Uploaded State ── */
+          <div>
+            {currentIsVideo ? (
+              /* Video preview */
+              <div style={{marginBottom:10,borderRadius:10,overflow:'hidden',background:'#000',position:'relative'}}>
+                <video
+                  src={value} controls preload="metadata"
+                  style={{width:'100%',maxHeight:200,display:'block',borderRadius:10}}
+                />
+                <span style={{position:'absolute',top:8,left:8,background:'rgba(0,0,0,.7)',
+                  color:'#fff',fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:6,
+                  letterSpacing:'.04em'}}>
+                  🎬 VIDEO
+                </span>
+              </div>
+            ) : (
+              /* Image preview */
+              <div style={{marginBottom:10,borderRadius:10,overflow:'hidden'}}>
+                <img src={value} style={{width:'100%',maxHeight:180,objectFit:'cover',display:'block',borderRadius:10}} alt="preview"/>
+              </div>
+            )}
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:12,color:'var(--success)',fontWeight:700,marginBottom:1}}>
+                  ✅ {currentIsVideo ? 'Video' : 'Image'} uploaded successfully
+                </p>
+                <p style={{fontSize:10,color:'var(--dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {value.split('/').pop().split('?')[0]}
+                </p>
+              </div>
+              <button
+                onClick={clear}
+                style={{flexShrink:0,background:'rgba(248,113,113,.12)',border:'1px solid rgba(248,113,113,.25)',
+                  borderRadius:8,padding:'6px 10px',cursor:'pointer',color:'var(--danger)',
+                  fontSize:11,fontWeight:700,display:'flex',alignItems:'center',gap:4}}
+              >
+                <Ic n="x" s={12}/> Remove
+              </button>
+            </div>
+          </div>
+
+        ) : (
+          /* ── Empty State ── */
+          <div style={{textAlign:'center',padding:'12px 0'}}>
+            <div style={{display:'flex',justifyContent:'center',gap:12,marginBottom:10}}>
+              <div style={{width:36,height:36,borderRadius:10,background:'var(--border)',
+                display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <Ic n="img" s={18} c="var(--muted)"/>
+              </div>
+              {accept !== 'image' && (
+                <div style={{width:36,height:36,borderRadius:10,background:'var(--border)',
+                  display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                  </svg>
+                </div>
+              )}
+            </div>
+            <p style={{fontSize:13,fontWeight:600,color:'var(--text)',marginBottom:4}}>
+              Tap to upload or drag &amp; drop
+            </p>
+            <p style={{fontSize:11,color:'var(--dim)'}}>
+              {accept==='image' ? 'JPG, PNG, WebP — max 10 MB'
+                : accept==='video' ? 'MP4, MOV, WebM — max 100 MB'
+                : '🖼 Images (JPG/PNG) · 🎬 Videos (MP4/MOV)'}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Error message */}
+      {err && (
+        <div style={{marginTop:8,padding:'8px 12px',background:'rgba(248,113,113,.1)',
+          border:'1px solid rgba(248,113,113,.2)',borderRadius:8,
+          fontSize:12,color:'var(--danger)',display:'flex',alignItems:'center',gap:6}}>
+          <Ic n="warn" s={13}/> {err}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Field ──────────────────────────────────────────────────────
+const Field = ({label,children,required})=>(
+  <div>
+    <p style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',marginBottom:8}}>
+      {label.toUpperCase()}{required&&<span style={{color:'var(--accent)',marginLeft:4}}>*</span>}
+    </p>
+    {children}
+  </div>
+);
+
+// ── LOGIN PAGE ─────────────────────────────────────────────────
+const Login = ({onLogin}) => {
+  const [email,setEmail] = useState('');
+  const [pass,setPass] = useState('');
+  const [err,setErr] = useState('');
+  const [busy,setBusy] = useState(false);
+
+  const submit = async e => {
+    e.preventDefault(); setErr(''); setBusy(true);
+    try{
+      const c=await auth.signInWithEmailAndPassword(email,pass);
+      onLogin(c.user);
+    }catch(e){setErr('Incorrect email or password');}
+    finally{setBusy(false);}
+  };
+
+  return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 16px',background:'radial-gradient(ellipse at 30% 40%, #0d2040 0%, var(--bg) 65%)'}}>
+      <div style={{width:'100%',maxWidth:380}} className="fade-up">
+        {/* Logo */}
+        <div style={{textAlign:'center',marginBottom:36}}>
+          <div style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:64,height:64,borderRadius:20,background:'var(--accent)',marginBottom:16,boxShadow:'0 8px 32px rgba(245,166,35,.35)'}}>
+            <span style={{fontFamily:'Outfit',fontWeight:900,fontSize:18,color:'#050c18',letterSpacing:'-.02em'}}>KWT</span>
+          </div>
+          <h1 style={{fontFamily:'Outfit',fontSize:28,fontWeight:800,letterSpacing:'-.03em',marginBottom:4}}>KWT News</h1>
+          <p style={{color:'var(--muted)',fontSize:14}}>Admin Dashboard</p>
+        </div>
+
+        {/* Card */}
+        <div className="card" style={{padding:28,borderRadius:20}}>
+          {err&&(
+            <div style={{padding:'10px 14px',background:'rgba(248,113,113,.08)',border:'1px solid rgba(248,113,113,.2)',borderRadius:10,color:'var(--danger)',fontSize:13,marginBottom:18,display:'flex',alignItems:'center',gap:8}}>
+              <Ic n="warn" s={14}/>{err}
+            </div>
+          )}
+          <form onSubmit={submit}>
+            <div style={{display:'flex',flexDirection:'column',gap:16}}>
+              <Field label="Email" required>
+                <input className="inp" type="email" placeholder="you@gmail.com" value={email} onChange={e=>setEmail(e.target.value)} required/>
+              </Field>
+              <Field label="Password" required>
+                <input className="inp" type="password" placeholder="••••••••" value={pass} onChange={e=>setPass(e.target.value)} required/>
+              </Field>
+              <button className="btn btn-accent" type="submit" disabled={busy} style={{width:'100%',padding:'13px',fontSize:15,marginTop:4,borderRadius:12}}>
+                {busy?<span className="spinner" style={{width:18,height:18}}></span>:'Sign In'}
+              </button>
+            </div>
+          </form>
+        </div>
+        <p style={{textAlign:'center',fontSize:11,color:'var(--dim)',marginTop:20}}>KWT News © 2026</p>
+      </div>
+    </div>
+  );
+};
+
+// ── DASHBOARD ─────────────────────────────────────────────────
+const Dashboard = () => {
+  const [stats,setStats] = useState({news:0,users:0,comments:0,imp:0,clicks:0,breaking:0});
+  const [catCounts,setCatCounts] = useState({});
+  const [recent,setRecent] = useState([]);
+  const [loading,setLoading] = useState(true);
+
+  useEffect(()=>{
+    const u=[];
+    u.push(db.collection('news').onSnapshot(s=>{
+      const cc={};
+      s.docs.forEach(d=>{ const c=d.data().category; if(c) cc[c]=(cc[c]||0)+1; });
+      setCatCounts(cc);
+      setStats(p=>({...p,news:s.size,breaking:s.docs.filter(d=>d.data().isBreaking).length}));
+    }));
+    u.push(db.collection('users').onSnapshot(s=>setStats(p=>({...p,users:s.size}))));
+    u.push(db.collection('comments').onSnapshot(s=>setStats(p=>({...p,comments:s.size}))));
+    u.push(db.collection('ads').onSnapshot(s=>{
+      let i=0,c=0; s.docs.forEach(d=>{i+=d.data().impressions||0;c+=d.data().clicks||0;});
+      setStats(p=>({...p,imp:i,clicks:c}));
+    }));
+    u.push(db.collection('news').orderBy('timestamp','desc').limit(6).onSnapshot(s=>{
+      setRecent(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);
+    }));
+    return ()=>u.forEach(f=>f());
+  },[]);
+
+  const cards=[
+    {label:'News',val:fmt(stats.news),sub:`${stats.breaking} breaking`,icon:'news',clr:'#F5A623'},
+    {label:'Users',val:fmt(stats.users),sub:'registered',icon:'users',clr:'#60a5fa'},
+    {label:'Comments',val:fmt(stats.comments),sub:'total',icon:'chat',clr:'#a78bfa'},
+    {label:'Ad Views',val:fmt(stats.imp),sub:`${fmt(stats.clicks)} clicks`,icon:'eye',clr:'#34d399'},
+  ];
+
+  return (
+    <div className="fade-up">
+      <div style={{marginBottom:24}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+          <div className="pulse" style={{width:7,height:7,borderRadius:'50%',background:'var(--success)',flexShrink:0}}></div>
+          <span style={{fontSize:11,fontWeight:700,color:'var(--success)',letterSpacing:'.06em'}}>LIVE</span>
+        </div>
+        <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>Dashboard</h1>
+      </div>
+
+      {/* Stats grid */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:20}}>
+        {cards.map((c,i)=>(
+          <div key={i} className="stat" style={{borderLeft:`3px solid ${c.clr}`}}>
+            <div style={{fontSize:26,fontWeight:800,color:c.clr,letterSpacing:'-.03em',marginBottom:2}}>{c.val}</div>
+            <div style={{fontSize:13,fontWeight:600,marginBottom:1}}>{c.label}</div>
+            <div style={{fontSize:11,color:'var(--dim)'}}>{c.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Category breakdown */}
+      <div className="card" style={{marginBottom:20}}>
+        <div style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:8}}>
+          <Ic n="tag" s={15} c="var(--accent)"/>
+          <span style={{fontWeight:700,fontSize:14}}>Posts by Category</span>
+        </div>
+        <div style={{padding:'14px 16px',display:'flex',gap:10,flexWrap:'wrap'}}>
+          {CATEGORIES.map(cat=>(
+            <div key={cat.value} style={{flex:'1 1 90px',padding:'12px 14px',borderRadius:12,background:'var(--surface2)',border:`1px solid var(--border)`,textAlign:'center',minWidth:80}}>
+              <p style={{fontSize:20,marginBottom:2}}>{cat.label.split(' ')[0]}</p>
+              <p style={{fontSize:20,fontWeight:800,color:cat.color,letterSpacing:'-.02em'}}>{catCounts[cat.value]||0}</p>
+              <p style={{fontSize:10,color:'var(--dim)',lineHeight:1.3,marginTop:2}}>{cat.label.replace(/^\S+\s/,'')}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent news */}
+      <div className="card">
+        <div style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:8}}>
+          <Ic n="news" s={15} c="var(--accent)"/>
+          <span style={{fontWeight:700,fontSize:14}}>Recent News</span>
+        </div>
+        {loading?[1,2,3,4].map(i=>(
+          <div key={i} style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',display:'flex',gap:12}}>
+            <div className="shimmer" style={{width:44,height:44,borderRadius:10,flexShrink:0}}></div>
+            <div style={{flex:1}}>
+              <div className="shimmer" style={{height:13,borderRadius:6,width:'70%',marginBottom:8}}></div>
+              <div className="shimmer" style={{height:10,borderRadius:6,width:'40%'}}></div>
+            </div>
+          </div>
+        )):recent.map(n=>{
+          const catInfo = CATEGORIES.find(c=>c.value===n.category);
+          return (
+            <div key={n.id} className="row" style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',gap:12}}>
+              <div style={{width:44,height:44,borderRadius:10,background:'var(--surface2)',overflow:'hidden',flexShrink:0}}>
+                {n.imageUrl&&<img src={n.imageUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} loading="lazy"/>}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginBottom:3}}>{n.title||'Untitled'}</p>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:11,color:'var(--dim)'}}>{fmtDate(n.timestamp)}</span>
+                  {n.category&&<span style={{fontSize:10,color:catInfo?.color||'var(--muted)',background:'var(--surface2)',padding:'1px 7px',borderRadius:999,border:`1px solid ${catInfo?.color||'var(--border)'}33`}}>{catInfo?.label||n.category}</span>}
+                </div>
+              </div>
+              {n.isBreaking&&<span className="badge" style={{background:'rgba(248,113,113,.12)',color:'var(--danger)',border:'1px solid rgba(248,113,113,.2)',fontSize:9}}>BREAKING</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ── NEWS FORM (Full-Screen Page) ───────────────────────────────
+// All categories — used in form dropdown + filter chips
+const CATEGORIES = [
+  {value:'kuwait',    label:'🇰🇼 Kuwait',       color:'#34d399'},
+  {value:'world',     label:'🌍 World',          color:'#60a5fa'},
+  {value:'kuwait-jobs',    label:'💼 Kuwait Jobs',   color:'#a78bfa'},
+  {value:'kuwait-offers',  label:'🛍️ Kuwait Offers', color:'#f472b6'},
+  {value:'funny-news-meme',label:'😂 Funny & Memes', color:'#fbbf24'},
+];
+
+const BLANK = {title:'',summary:'',content:'',imageUrl:'',thumbnail:'',category:'kuwait',source:'KWT News',sourceLogo:'',readTime:'3 min read',isBreaking:false,mediaType:'image'};
+
+const NewsForm = ({editing, initialForm, onSave, onCancel, toast}) => {
+  const [form, setForm] = useState(initialForm || BLANK);
+  const [saving, setSaving] = useState(false);
+  const F = p => setForm(prev=>({...prev,...p}));
+
+  // Scroll to top when form opens
+  useEffect(()=>{ window.scrollTo({top:0,behavior:'smooth'}); },[]);
+
+  const save = async () => {
+    if(!form.title.trim()){ toast.add('Title is required','error'); return; }
+    if(!form.summary.trim()){ toast.add('Summary is required','error'); return; }
+    setSaving(true);
+    try{
+      if(editing){
+        const d={...form};
+        delete d.timestamp;
+        await db.collection('news').doc(editing).update(d);
+        toast.add('Article updated successfully!');
+      } else {
+        const d={...form, timestamp:firebase.firestore.FieldValue.serverTimestamp(), views:0, likes:0, commentCount:0};
+        await db.collection('news').add(d);
+        toast.add('Article published successfully!');
+      }
+      onSave();
+    }catch(e){ toast.add(e.message,'error'); }
+    finally{ setSaving(false); }
+  };
+
+  return (
+    <div className="fade-up" style={{maxWidth:860,margin:'0 auto'}}>
+
+      {/* ── Top Bar ── */}
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:28,flexWrap:'wrap'}}>
+        <button className="btn btn-ghost" style={{padding:'9px 12px',gap:6,flexShrink:0}} onClick={onCancel}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <div style={{flex:1,minWidth:0}}>
+          <h1 style={{fontFamily:'Outfit',fontSize:22,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>
+            {editing ? '✏️ Edit Article' : '📝 New Article'}
+          </h1>
+          <p style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{editing ? 'Update the article fields below' : 'Fill in all fields and publish'}</p>
+        </div>
+        <div style={{display:'flex',gap:10,flexShrink:0}}>
+          <button className="btn btn-ghost" onClick={onCancel}>Discard</button>
+          <button className="btn btn-accent" onClick={save} disabled={saving} style={{minWidth:130,fontSize:14}}>
+            {saving
+              ? <><span className="spinner" style={{width:16,height:16}}/> Saving…</>
+              : <><Ic n={editing?'ok':'send'} s={15}/>{editing?'Update Article':'Publish Now'}</>
+            }
+          </button>
+        </div>
+      </div>
+
+      {/* ── Two-Column Layout on desktop ── */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr',gap:16}} className="form-grid">
+
+        {/* LEFT / MAIN COLUMN */}
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+          {/* Headline */}
+          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:16,padding:20}}>
+            <p style={{fontSize:11,fontWeight:800,color:'var(--accent)',letterSpacing:'.08em',marginBottom:14}}>📰 ARTICLE INFO</p>
+            <div style={{display:'flex',flexDirection:'column',gap:14}}>
+              <Field label="Headline / Title" required>
+                <input className="inp" value={form.title}
+                  onChange={e=>F({title:e.target.value})}
+                  placeholder="Enter a compelling news headline…"
+                  style={{fontSize:15,fontWeight:600}}/>
+                <p style={{fontSize:11,color:'var(--dim)',marginTop:5}}>{form.title.length} / 150 characters</p>
+              </Field>
+              <Field label="Summary" required>
+                <textarea className="inp" value={form.summary}
+                  onChange={e=>F({summary:e.target.value})}
+                  placeholder="Write a short 2–3 line summary that appears on the news card…"
+                  style={{minHeight:100,lineHeight:1.6}}/>
+                <p style={{fontSize:11,color:'var(--dim)',marginTop:5}}>{form.summary.length} characters</p>
+              </Field>
+              <Field label="Full Content (Article Body)">
+                <textarea className="inp" value={form.content}
+                  onChange={e=>F({content:e.target.value})}
+                  placeholder="Write the complete article body here. Supports plain text. Use double line-breaks for paragraphs…"
+                  style={{minHeight:200,lineHeight:1.7}}/>
+              </Field>
+            </div>
+          </div>
+
+          {/* Meta Info */}
+          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:16,padding:20}}>
+            <p style={{fontSize:11,fontWeight:800,color:'var(--info)',letterSpacing:'.08em',marginBottom:14}}>⚙️ ARTICLE SETTINGS</p>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+              <Field label="Category" required>
+                <select className="inp" value={form.category} onChange={e=>F({category:e.target.value})}>
+                  {CATEGORIES.map(c=>(
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Media Type">
+                <select className="inp" value={form.mediaType} onChange={e=>F({mediaType:e.target.value})}>
+                  <option value="image">🖼 Image</option>
+                  <option value="video">🎬 Video</option>
+                </select>
+              </Field>
+              <Field label="Source Name">
+                <input className="inp" value={form.source}
+                  onChange={e=>F({source:e.target.value})}
+                  placeholder="e.g. KWT News, Reuters…"/>
+              </Field>
+              <Field label="Read Time">
+                <input className="inp" value={form.readTime}
+                  onChange={e=>F({readTime:e.target.value})}
+                  placeholder="e.g. 3 min read"/>
+              </Field>
+            </div>
+          </div>
+
+        </div>
+
+        {/* RIGHT / SIDEBAR COLUMN */}
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+          {/* Breaking Toggle */}
+          <div style={{background: form.isBreaking ? 'rgba(248,113,113,.07)' : 'var(--surface)', border:`1.5px solid ${form.isBreaking?'rgba(248,113,113,.4)':'var(--border)'}`,borderRadius:16,padding:20,transition:'all .2s'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+              <div>
+                <p style={{fontSize:14,fontWeight:800,color: form.isBreaking ? 'var(--danger)' : 'var(--text)'}}>
+                  🚨 Breaking News
+                </p>
+                <p style={{fontSize:12,color:'var(--muted)',marginTop:4,lineHeight:1.5}}>
+                  Pins this article to the top of the feed with a BREAKING badge
+                </p>
+              </div>
+              <button
+                className="tog"
+                style={{background:form.isBreaking?'var(--danger)':'var(--border2)',flexShrink:0}}
+                onClick={()=>F({isBreaking:!form.isBreaking})}>
+                <div className="tog-thumb" style={{left:form.isBreaking?'22px':'4px'}}></div>
+              </button>
+            </div>
+            {form.isBreaking && (
+              <div style={{marginTop:12,padding:'8px 12px',background:'rgba(248,113,113,.1)',borderRadius:8,fontSize:12,color:'var(--danger)',fontWeight:600}}>
+                ⚡ This article will appear as BREAKING in the news feed
+              </div>
+            )}
+          </div>
+
+          {/* Article Image / Video Upload */}
+          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:16,padding:20}}>
+            <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'.08em',marginBottom:14}}>
+              {form.mediaType === 'video' ? '🎬 ARTICLE VIDEO' : '🖼 ARTICLE IMAGE'}
+            </p>
+            {form.mediaType === 'video' ? (
+              <ImgUpload
+                value={form.imageUrl}
+                onChange={v=>F({imageUrl:v})}
+                label=""
+                accept="video"
+              />
+            ) : (
+              <ImgUpload
+                value={form.imageUrl}
+                onChange={v=>F({imageUrl:v})}
+                label=""
+                accept="image"
+              />
+            )}
+            {/* Thumbnail for video */}
+            {form.mediaType === 'video' && (
+              <div style={{marginTop:14}}>
+                <p style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',marginBottom:8}}>
+                  🖼 VIDEO THUMBNAIL (Optional)
+                </p>
+                <ImgUpload
+                  value={form.thumbnail}
+                  onChange={v=>F({thumbnail:v})}
+                  label=""
+                  accept="image"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Source Logo */}
+          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:16,padding:20}}>
+            <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'.08em',marginBottom:14}}>🏷 SOURCE LOGO</p>
+            <ImgUpload value={form.sourceLogo} onChange={v=>F({sourceLogo:v})} label=""/>
+            {form.sourceLogo && (
+              <div style={{marginTop:12,display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--surface2)',borderRadius:10,border:'1px solid var(--border)'}}>
+                <img src={form.sourceLogo} style={{width:36,height:36,objectFit:'cover',borderRadius:8}} alt="logo"/>
+                <div>
+                  <p style={{fontSize:12,fontWeight:600,color:'var(--success)'}}>✅ Logo uploaded</p>
+                  <p style={{fontSize:10,color:'var(--dim)',marginTop:1}}>{form.source || 'Source'}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Live Preview Card */}
+          {(form.title || form.imageUrl) && (
+            <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:16,padding:20}}>
+              <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'.08em',marginBottom:14}}>👁 LIVE PREVIEW</p>
+              <div style={{background:'var(--surface2)',borderRadius:12,overflow:'hidden',border:'1px solid var(--border)'}}>
+                {form.imageUrl ? (
+                  form.mediaType === 'video' ? (
+                    <video src={form.imageUrl} poster={form.thumbnail} controls
+                      style={{width:'100%',height:140,display:'block',background:'#000'}}/>
+                  ) : (
+                    <img src={form.imageUrl} style={{width:'100%',height:140,objectFit:'cover',display:'block'}} alt=""/>
+                  )
+                ) : (
+                  <div style={{height:80,background:'var(--border)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    <Ic n={form.mediaType==='video'?'img':'img'} s={24} c="var(--dim)"/>
+                  </div>
+                )}
+                <div style={{padding:12}}>
+                  {form.isBreaking && <span style={{fontSize:9,fontWeight:800,color:'var(--danger)',background:'rgba(248,113,113,.12)',border:'1px solid rgba(248,113,113,.2)',borderRadius:4,padding:'2px 6px',display:'inline-block',marginBottom:6,letterSpacing:'.05em'}}>⚡ BREAKING</span>}
+                  <p style={{fontSize:13,fontWeight:700,lineHeight:1.4,marginBottom:4,color:'var(--text)'}}>{form.title || 'Your headline here…'}</p>
+                  {form.summary && <p style={{fontSize:11,color:'var(--muted)',lineHeight:1.5,WebkitLineClamp:2,display:'-webkit-box',WebkitBoxOrient:'vertical',overflow:'hidden'}}>{form.summary}</p>}
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8}}>
+                    {form.sourceLogo && <img src={form.sourceLogo} style={{width:16,height:16,borderRadius:3,objectFit:'cover'}}/>}
+                    <span style={{fontSize:10,color:'var(--dim)'}}>{form.source || 'KWT News'}</span>
+                    <span style={{fontSize:10,color:'var(--dim)'}}>· {form.readTime || '3 min read'}</span>
+                    <span style={{fontSize:9,color:'var(--dim)',marginLeft:'auto',padding:'2px 6px',background:'var(--border)',borderRadius:4}}>{form.category}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bottom Save Button (mobile sticky) */}
+          <button className="btn btn-accent" onClick={save} disabled={saving}
+            style={{width:'100%',padding:'15px',fontSize:15,borderRadius:14,fontWeight:700}}>
+            {saving
+              ? <><span className="spinner" style={{width:18,height:18}}/> Saving…</>
+              : <><Ic n={editing?'ok':'send'} s={16}/>{editing ? 'Update Article' : 'Publish Article'}</>
+            }
+          </button>
+
+        </div>
+      </div>
+
+      {/* Responsive 2-col CSS */}
+      <style>{`
+        @media(min-width:680px){
+          .form-grid{ grid-template-columns: 1fr 360px !important; }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+// ── NEWS MANAGER ───────────────────────────────────────────────
+const NewsManager = ({toast, initCat='all'}) => {
+  const [news,setNews] = useState([]);
+  const [loading,setLoading] = useState(true);
+  const [view,setView] = useState('list'); // 'list' | 'form'
+  const [editing,setEditing] = useState(null);
+  const [formInit,setFormInit] = useState(BLANK);
+  const [confirm,setConfirm] = useState(null);
+  const [search,setSearch] = useState('');
+  const [cat,setCat] = useState(initCat);
+  const [visFilter,setVisFilter] = useState('visible');
+
+  useEffect(()=>{
+    const u=db.collection('news').orderBy('timestamp','desc').limit(50).onSnapshot(s=>{
+      setNews(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);
+    });
+    return ()=>u();
+  },[]);
+
+  const openAdd=()=>{ setEditing(null); setFormInit(BLANK); setView('form'); };
+  const openEdit=n=>{ setEditing(n.id); setFormInit({...BLANK,...n}); setView('form'); };
+  const closeForm=()=>{ setView('list'); setEditing(null); setFormInit(BLANK); };
+
+  const del=async id=>{
+    try{ await db.collection('news').doc(id).delete(); toast.add('Article deleted'); }
+    catch(e){ toast.add(e.message,'error'); }
+    setConfirm(null);
+  };
+
+  const toggleBreaking=async(id,val)=>{
+    await db.collection('news').doc(id).update({isBreaking:!val});
+    toast.add(!val?'Marked as Breaking!':'Breaking removed');
+  };
+
+  const toggleHidden=async(id,val)=>{
+    await db.collection('news').doc(id).update({hidden:!val});
+    toast.add(!val?'Article hidden':'Article visible');
+  };
+
+  const filtered=useMemo(()=>news.filter(n=>{
+    const q=search.toLowerCase();
+    const matchQ=!q||n.title?.toLowerCase().includes(q);
+    const matchC=cat==='all'||n.category===cat;
+    const matchV=visFilter==='all'||(visFilter==='hidden'?n.hidden===true:!n.hidden);
+    return matchQ&&matchC&&matchV;
+  }),[news,search,cat,visFilter]);
+
+  // ── Full-screen form view ──
+  if(view==='form') return (
+    <NewsForm
+      editing={editing}
+      initialForm={formInit}
+      onSave={closeForm}
+      onCancel={closeForm}
+      toast={toast}
+    />
+  );
+
+  // ── List view ──
+  return (
+    <div className="fade-up">
+      {confirm&&<Confirm msg={`Delete "${confirm.title}"?`} onYes={()=>del(confirm.id)} onNo={()=>setConfirm(null)}/>}
+
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,gap:12,flexWrap:'wrap'}}>
+        <div>
+          <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>News</h1>
+          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>
+            {news.filter(n=>!n.hidden).length} visible · {news.filter(n=>n.hidden).length} hidden · {news.filter(n=>n.isBreaking).length} breaking
+          </p>
+        </div>
+        <button className="btn btn-accent" style={{padding:'11px 20px',gap:8,fontSize:14}} onClick={openAdd}>
+          <Ic n="plus" s={16}/> Add Article
+        </button>
+      </div>
+
+      {/* Search */}
+      <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:16}}>
+        <div style={{position:'relative'}}>
+          <div style={{position:'absolute',left:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none'}}>
+            <Ic n="search" s={15} c="var(--dim)"/>
+          </div>
+          <input className="inp" placeholder="Search articles by title…" value={search}
+            onChange={e=>setSearch(e.target.value)} style={{paddingLeft:40}}/>
+        </div>
+
+        {/* Category filter */}
+        <div style={{display:'flex',gap:8,overflowX:'auto',paddingBottom:2}}>
+          {[{v:'all',label:'📋 All'},...CATEGORIES.map(c=>({v:c.value,label:c.label}))].map(({v,label})=>(
+            <button key={v} onClick={()=>setCat(v)}
+              style={{padding:'7px 14px',borderRadius:8,fontSize:12,fontWeight:600,border:'1px solid',cursor:'pointer',transition:'all .15s',whiteSpace:'nowrap',
+                background:cat===v?'var(--accent)':'transparent',
+                color:cat===v?'#050c18':'var(--muted)',
+                borderColor:cat===v?'var(--accent)':'var(--border)'}}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Visibility filter */}
+        <div style={{display:'flex',gap:8,overflowX:'auto',paddingBottom:2}}>
+          {[
+            {v:'visible',label:'👁 Visible',cnt:news.filter(n=>!n.hidden).length},
+            {v:'hidden', label:'🚫 Hidden', cnt:news.filter(n=>n.hidden).length},
+            {v:'all',    label:'All',       cnt:news.length},
+          ].map(({v,label,cnt})=>(
+            <button key={v} onClick={()=>setVisFilter(v)}
+              style={{padding:'7px 14px',borderRadius:8,fontSize:12,fontWeight:600,border:'1px solid',cursor:'pointer',
+                transition:'all .15s',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:6,
+                background:visFilter===v?(v==='hidden'?'rgba(248,113,113,.15)':'var(--accent)'):'transparent',
+                color:visFilter===v?(v==='hidden'?'var(--danger)':'#050c18'):'var(--muted)',
+                borderColor:visFilter===v?(v==='hidden'?'var(--danger)':'var(--accent)'):'var(--border)'}}>
+              {label}
+              <span style={{background:'rgba(255,255,255,.15)',borderRadius:999,padding:'0px 7px',fontSize:10,fontWeight:800}}>{cnt}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Articles List */}
+      <div className="card">
+        {loading ? [1,2,3,4].map(i=>(
+          <div key={i} style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',display:'flex',gap:12,alignItems:'center'}}>
+            <div className="shimmer" style={{width:56,height:56,borderRadius:12,flexShrink:0}}></div>
+            <div style={{flex:1}}>
+              <div className="shimmer" style={{height:13,borderRadius:6,width:'65%',marginBottom:8}}></div>
+              <div className="shimmer" style={{height:10,borderRadius:6,width:'35%'}}></div>
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <div className="shimmer" style={{width:32,height:32,borderRadius:8}}></div>
+              <div className="shimmer" style={{width:32,height:32,borderRadius:8}}></div>
+            </div>
+          </div>
+        )) : filtered.length===0 ? (
+          <div style={{padding:56,textAlign:'center',color:'var(--dim)'}}>
+            <Ic n="news" s={32} c="var(--border2)"/>
+            <p style={{marginTop:14,fontSize:14,fontWeight:600}}>No articles found</p>
+            <p style={{fontSize:12,marginTop:4}}>Try changing the filter or add a new article</p>
+            <button className="btn btn-accent" style={{marginTop:16,padding:'10px 20px'}} onClick={openAdd}>
+              <Ic n="plus" s={14}/> Add Article
+            </button>
+          </div>
+        ) : filtered.map(n=>(
+          <div key={n.id} className="row"
+            style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',
+              gap:12,opacity:n.hidden?0.45:1,transition:'opacity .2s'}}>
+
+            {/* Thumbnail */}
+            <div style={{width:56,height:56,borderRadius:12,background:'var(--surface2)',overflow:'hidden',flexShrink:0,position:'relative',border:'1px solid var(--border)'}}>
+              {n.imageUrl
+                ? <img src={n.imageUrl} style={{width:'100%',height:'100%',objectFit:'cover',filter:n.hidden?'grayscale(1)':''}} loading="lazy"/>
+                : <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}><Ic n="img" s={20} c="var(--dim)"/></div>
+              }
+              {n.hidden && (
+                <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.55)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <Ic n="eyeoff" s={16} c="#fff"/>
+                </div>
+              )}
+            </div>
+
+            {/* Info */}
+            <div style={{flex:1,minWidth:0}}>
+              <p style={{fontSize:13,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginBottom:4,color:'var(--text)'}}>
+                {n.title||'Untitled Article'}
+              </p>
+              <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                <span style={{fontSize:11,color:'var(--dim)'}}>{timeAgo(n.timestamp)}</span>
+                <span style={{fontSize:10,color:'var(--muted)',background:'var(--surface2)',padding:'1px 6px',borderRadius:4,border:'1px solid var(--border)'}}>{n.category||'all'}</span>
+                {n.isBreaking && <span className="badge" style={{background:'rgba(248,113,113,.12)',color:'var(--danger)',border:'1px solid rgba(248,113,113,.25)',fontSize:9}}>⚡ BREAKING</span>}
+                {n.hidden && <span className="badge" style={{background:'rgba(100,116,139,.1)',color:'var(--muted)',border:'1px solid rgba(100,116,139,.2)',fontSize:9}}>HIDDEN</span>}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{display:'flex',gap:5,flexShrink:0,alignItems:'center'}}>
+              {/* Breaking toggle */}
+              <button className="tog" title={n.isBreaking?'Remove Breaking':'Set Breaking'}
+                style={{background:n.isBreaking?'var(--danger)':'var(--border2)'}}
+                onClick={()=>toggleBreaking(n.id,n.isBreaking)}>
+                <div className="tog-thumb" style={{left:n.isBreaking?'22px':'4px'}}></div>
+              </button>
+              {/* Hide/Show */}
+              <button className="btn btn-icon" title={n.hidden?'Make Visible':'Hide'}
+                style={{background:n.hidden?'rgba(245,166,35,.12)':'var(--surface2)',borderColor:n.hidden?'rgba(245,166,35,.35)':'var(--border)',color:n.hidden?'var(--accent)':'var(--muted)'}}
+                onClick={()=>toggleHidden(n.id,!!n.hidden)}>
+                <Ic n={n.hidden?'eye':'eyeoff'} s={14}/>
+              </button>
+              {/* Edit */}
+              <button className="btn btn-icon" title="Edit Article" onClick={()=>openEdit(n)}>
+                <Ic n="edit" s={14}/>
+              </button>
+              {/* Delete */}
+              <button className="btn btn-red" title="Delete Article" onClick={()=>setConfirm(n)}>
+                <Ic n="trash" s={14}/>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── ADS MANAGER ────────────────────────────────────────────────
+const BLANK_AD = {title:'',position:'top_banner',targetUrl:'',imageUrl:'',startDate:'',endDate:'',active:true,impressions:0,clicks:0};
+
+const AdsForm = ({editing, initialForm, onSave, onCancel, toast}) => {
+  const [form, setForm] = useState(initialForm || BLANK_AD);
+  const [saving, setSaving] = useState(false);
+  const F = p => setForm(prev=>({...prev,...p}));
+
+  useEffect(()=>{ window.scrollTo({top:0,behavior:'smooth'}); },[]);
+
+  const save = async () => {
+    if(!form.title.trim()){ toast.add('Title required','error'); return; }
+    setSaving(true);
+    try{
+      if(editing){
+        const d={...form};
+        delete d.createdAt;
+        delete d.impressions;
+        delete d.clicks;
+        await db.collection('ads').doc(editing).update(d);
+        toast.add('Ad updated!');
+      } else {
+        const d={...form, createdAt:firebase.firestore.FieldValue.serverTimestamp(), impressions:0, clicks:0};
+        await db.collection('ads').add(d);
+        toast.add('Ad created!');
+      }
+      onSave();
+    }catch(e){ toast.add(e.message,'error'); }
+    finally{ setSaving(false); }
+  };
+
+  return (
+    <div className="fade-up" style={{maxWidth:700,margin:'0 auto'}}>
+      {/* Top Bar */}
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:28,flexWrap:'wrap'}}>
+        <button className="btn btn-ghost" style={{padding:'9px 12px',gap:6,flexShrink:0}} onClick={onCancel}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <div style={{flex:1,minWidth:0}}>
+          <h1 style={{fontFamily:'Outfit',fontSize:22,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>
+            {editing ? '✏️ Edit Ad' : '📢 New Ad'}
+          </h1>
+          <p style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{editing ? 'Update ad details below' : 'Fill in details and create ad'}</p>
+        </div>
+        <div style={{display:'flex',gap:10,flexShrink:0}}>
+          <button className="btn btn-ghost" onClick={onCancel}>Discard</button>
+          <button className="btn btn-accent" onClick={save} disabled={saving} style={{minWidth:130,fontSize:14}}>
+            {saving
+              ? <><span className="spinner" style={{width:16,height:16}}/> Saving…</>
+              : <><Ic n={editing?'ok':'send'} s={15}/>{editing?'Update Ad':'Create Ad'}</>
+            }
+          </button>
+        </div>
+      </div>
+
+      {/* Form body */}
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+        {/* Basic Info */}
+        <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:16,padding:20}}>
+          <p style={{fontSize:11,fontWeight:800,color:'var(--accent)',letterSpacing:'.08em',marginBottom:14}}>📢 AD INFO</p>
+          <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            <Field label="Ad Title" required>
+              <input className="inp" value={form.title} onChange={e=>F({title:e.target.value})} placeholder="Enter ad title…" style={{fontSize:15,fontWeight:600}}/>
+            </Field>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+              <Field label="Position">
+                <select className="inp" value={form.position} onChange={e=>F({position:e.target.value})}>
+                  {AD_POSITIONS.map(p=><option key={p} value={p}>{posLabel(p)}</option>)}
+                </select>
+              </Field>
+              <Field label="Target URL">
+                <input className="inp" value={form.targetUrl} onChange={e=>F({targetUrl:e.target.value})} placeholder="https://…"/>
+              </Field>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+              <Field label="Start Date">
+                <input className="inp" type="date" value={form.startDate} onChange={e=>F({startDate:e.target.value})}/>
+              </Field>
+              <Field label="End Date">
+                <input className="inp" type="date" value={form.endDate} onChange={e=>F({endDate:e.target.value})}/>
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        {/* Banner Image */}
+        <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:16,padding:20}}>
+          <p style={{fontSize:11,fontWeight:800,color:'var(--info)',letterSpacing:'.08em',marginBottom:14}}>🖼 BANNER IMAGE</p>
+          <ImgUpload value={form.imageUrl} onChange={v=>F({imageUrl:v})} label="Banner Image" accept="image"/>
+        </div>
+
+        {/* Active toggle */}
+        <div style={{background:form.active?'rgba(52,211,153,.06)':'var(--surface)',border:`1.5px solid ${form.active?'rgba(52,211,153,.2)':'var(--border)'}`,borderRadius:16,padding:20,transition:'all .2s'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+            <div>
+              <p style={{fontSize:14,fontWeight:800,color:form.active?'var(--success)':'var(--text)'}}>Active / Live</p>
+              <p style={{fontSize:12,color:'var(--muted)',marginTop:4}}>Visible to users when active</p>
+            </div>
+            <button className="tog" style={{background:form.active?'var(--success)':'var(--border2)',flexShrink:0}} onClick={()=>F({active:!form.active})}>
+              <div className="tog-thumb" style={{left:form.active?'22px':'4px'}}></div>
+            </button>
+          </div>
+        </div>
+
+        {/* Save button (mobile) */}
+        <button className="btn btn-accent" onClick={save} disabled={saving} style={{width:'100%',padding:'15px',fontSize:15,borderRadius:14,fontWeight:700}}>
+          {saving
+            ? <><span className="spinner" style={{width:18,height:18}}/> Saving…</>
+            : <><Ic n={editing?'ok':'send'} s={16}/>{editing ? 'Update Ad' : 'Create Ad'}</>
+          }
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const AdsManager = ({toast}) => {
+  const [ads,setAds] = useState([]);
+  const [loading,setLoading] = useState(true);
+  const [view,setView] = useState('list');
+  const [editing,setEditing] = useState(null);
+  const [formInit,setFormInit] = useState(BLANK_AD);
+  const [confirm,setConfirm] = useState(null);
+
+  useEffect(()=>{
+    const u=db.collection('ads').orderBy('createdAt','desc').onSnapshot(s=>{
+      setAds(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);
+    });
+    return ()=>u();
+  },[]);
+
+  const openAdd=()=>{ setEditing(null); setFormInit(BLANK_AD); setView('form'); };
+  const openEdit=ad=>{ setEditing(ad.id); const {impressions,clicks,...rest}=ad; setFormInit({...BLANK_AD,...rest}); setView('form'); };
+  const closeForm=()=>{ setView('list'); setEditing(null); setFormInit(BLANK_AD); };
+
+  const del=async id=>{
+    try{await db.collection('ads').doc(id).delete();toast.add('Deleted');}
+    catch(e){toast.add(e.message,'error');}
+    setConfirm(null);
+  };
+
+  const toggleActive=async(id,val)=>{
+    await db.collection('ads').doc(id).update({active:!val});
+    toast.add(!val?'Ad activated':'Ad paused');
+  };
+
+  // Full-screen form view
+  if(view==='form') return (
+    <AdsForm
+      editing={editing}
+      initialForm={formInit}
+      onSave={closeForm}
+      onCancel={closeForm}
+      toast={toast}
+    />
+  );
+
+  // List view
+  return (
+    <div className="fade-up">
+      {confirm&&<Confirm msg={`Delete ad "${confirm.title}"?`} onYes={()=>del(confirm.id)} onNo={()=>setConfirm(null)}/>}
+
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+        <div>
+          <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>Ads</h1>
+          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{ads.length} ads · {ads.filter(a=>a.active).length} live</p>
+        </div>
+        <button className="btn btn-accent" style={{padding:'11px 20px',gap:8,fontSize:14}} onClick={openAdd}>
+          <Ic n="plus" s={16}/> Add Ad
+        </button>
+      </div>
+
+      {/* Position overview */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:10,marginBottom:20}}>
+        {AD_POSITIONS.map(pos=>{
+          const cnt=ads.filter(a=>a.position===pos&&a.active).length;
+          return (
+            <div key={pos} style={{padding:'12px 14px',borderRadius:12,background:cnt>0?'rgba(245,166,35,.08)':'var(--surface)',border:`1px solid ${cnt>0?'rgba(245,166,35,.25)':'var(--border)'}`}}>
+              <p style={{fontSize:10,fontWeight:700,color:cnt>0?'var(--accent)':'var(--dim)',marginBottom:4}}>{posLabel(pos)}</p>
+              <p style={{fontSize:22,fontWeight:800,color:cnt>0?'var(--accent)':'var(--border2)'}}>{cnt}</p>
+              <p style={{fontSize:10,color:'var(--dim)'}}>active</p>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="card">
+        {loading?(
+          <div style={{padding:40,textAlign:'center'}}><div className="spinner" style={{margin:'0 auto'}}></div></div>
+        ):ads.length===0?(
+          <div style={{padding:56,textAlign:'center',color:'var(--dim)'}}>
+            <Ic n="ads" s={32} c="var(--border2)"/>
+            <p style={{marginTop:14,fontSize:14,fontWeight:600}}>No ads yet</p>
+            <p style={{fontSize:12,marginTop:4}}>Create your first ad campaign</p>
+            <button className="btn btn-accent" style={{marginTop:16,padding:'10px 20px'}} onClick={openAdd}>
+              <Ic n="plus" s={14}/> Add Ad
+            </button>
+          </div>
+        ):ads.map(a=>(
+          <div key={a.id} className="row" style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',gap:12}}>
+            {/* Thumbnail */}
+            <div style={{width:56,height:44,borderRadius:10,background:'var(--surface2)',overflow:'hidden',flexShrink:0,border:'1px solid var(--border)'}}>
+              {a.imageUrl
+                ? <img src={a.imageUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} loading="lazy"/>
+                : <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}><Ic n="img" s={18} c="var(--dim)"/></div>
+              }
+            </div>
+            {/* Info */}
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3,flexWrap:'wrap'}}>
+                <p style={{fontSize:13,fontWeight:700}}>{a.title}</p>
+                <span className="badge" style={{background:a.active?'rgba(52,211,153,.1)':'rgba(100,116,139,.1)',color:a.active?'var(--success)':'var(--muted)',border:`1px solid ${a.active?'rgba(52,211,153,.2)':'rgba(100,116,139,.2)'}`,fontSize:9}}>
+                  {a.active?'LIVE':'PAUSED'}
+                </span>
+              </div>
+              <p style={{fontSize:11,color:'var(--dim)'}}>{posLabel(a.position)} · 👁 {fmt(a.impressions)} · CTR {ctr(a)}</p>
+              {(a.startDate||a.endDate)&&<p style={{fontSize:10,color:'var(--dim)',marginTop:2}}>{a.startDate||'…'} → {a.endDate||'∞'}</p>}
+            </div>
+            {/* Actions */}
+            <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
+              <button className="tog" style={{background:a.active?'var(--success)':'var(--border2)'}} title={a.active?'Pause':'Activate'} onClick={()=>toggleActive(a.id,a.active)}>
+                <div className="tog-thumb" style={{left:a.active?'22px':'4px'}}></div>
+              </button>
+              <button className="btn btn-icon" title="Edit Ad" onClick={()=>openEdit(a)}><Ic n="edit" s={14}/></button>
+              <button className="btn btn-red" title="Delete Ad" onClick={()=>setConfirm(a)}><Ic n="trash" s={14}/></button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── COMMENTS ──────────────────────────────────────────────────
+const CommentsManager = ({toast}) => {
+  const [comments,setComments] = useState([]);
+  const [loading,setLoading] = useState(true);
+  const [filter,setFilter] = useState('all');
+  const [confirm,setConfirm] = useState(null);
+  const [search,setSearch] = useState('');
+
+  useEffect(()=>{
+    const u=db.collection('comments').orderBy('timestamp','desc').limit(100).onSnapshot(s=>{
+      setComments(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);
+    });
+    return ()=>u();
+  },[]);
+
+  const del=async id=>{
+    await db.collection('comments').doc(id).delete(); toast.add('Deleted'); setConfirm(null);
+  };
+
+  const filtered=useMemo(()=>comments.filter(c=>{
+    const q=search.toLowerCase();
+    const mq=!q||c.content?.toLowerCase().includes(q)||c.authorName?.toLowerCase().includes(q)||c.authorEmail?.toLowerCase().includes(q);
+    const mf=filter==='all'||(filter==='reported'&&(c.reportCount||0)>0);
+    return mq&&mf;
+  }),[comments,search,filter]);
+
+  const reported=comments.filter(c=>c.reportCount>0).length;
+
+  return (
+    <div className="fade-up">
+      {confirm&&<Confirm msg={`Delete comment by "${confirm.name}"?`} onYes={()=>del(confirm.id)} onNo={()=>setConfirm(null)}/>}
+      <div style={{marginBottom:20}}>
+        <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>Comments</h1>
+        <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{comments.length} total · <span style={{color:'var(--danger)'}}>{reported} reported</span></p>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:16}}>
+        <div style={{position:'relative'}}>
+          <div style={{position:'absolute',left:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none'}}><Ic n="search" s={15} c="var(--dim)"/></div>
+          <input className="inp" placeholder="Search comments…" value={search} onChange={e=>setSearch(e.target.value)} style={{paddingLeft:40}}/>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          {[['all','All'],['reported',`🚨 Reported (${reported})`]].map(([f,l])=>(
+            <button key={f} onClick={()=>setFilter(f)} style={{padding:'7px 14px',borderRadius:8,fontSize:12,fontWeight:600,border:'1px solid',cursor:'pointer',transition:'all .15s',background:filter===f?(f==='reported'?'var(--danger)':'var(--accent)'):'transparent',color:filter===f?'#050c18':(f==='reported'?'var(--danger)':'var(--muted)'),borderColor:filter===f?(f==='reported'?'var(--danger)':'var(--accent)'):(f==='reported'?'rgba(248,113,113,.3)':'var(--border)')}}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="card">
+        {loading?[1,2,3].map(i=>(
+          <div key={i} style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',display:'flex',gap:12}}>
+            <div className="shimmer" style={{width:38,height:38,borderRadius:'50%',flexShrink:0}}></div>
+            <div style={{flex:1}}>
+              <div className="shimmer" style={{height:12,borderRadius:6,width:'50%',marginBottom:8}}></div>
+              <div className="shimmer" style={{height:11,borderRadius:6,width:'80%'}}></div>
+            </div>
+          </div>
+        )):filtered.length===0?(
+          <div style={{padding:48,textAlign:'center',color:'var(--dim)'}}>
+            <Ic n="chat" s={28} c="var(--border2)"/>
+            <p style={{marginTop:12,fontSize:13}}>No comments found</p>
+          </div>
+        ):filtered.map(c=>(
+          <div key={c.id} className="row" style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'flex-start',gap:12}}>
+            <img src={c.authorPhoto||`https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorName||'U')}&background=1a2d4a&color=F5A623&size=80`} style={{width:36,height:36,borderRadius:'50%',flexShrink:0,objectFit:'cover'}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:4,flexWrap:'wrap'}}>
+                <span style={{fontSize:13,fontWeight:700}}>{c.authorName||'Anonymous'}</span>
+                <span style={{fontSize:11,color:'var(--dim)'}}>{timeAgo(c.timestamp)}</span>
+                {(c.reportCount||0)>0&&<span className="badge" style={{background:'rgba(248,113,113,.1)',color:'var(--danger)',border:'1px solid rgba(248,113,113,.2)',fontSize:9}}>⚠ {c.reportCount}</span>}
+              </div>
+              <p style={{fontSize:13,color:'var(--muted)',lineHeight:1.5,wordBreak:'break-word'}}>{c.content}</p>
+            </div>
+            <button className="btn btn-red" style={{padding:'6px 8px',flexShrink:0}} onClick={()=>setConfirm({id:c.id,name:c.authorName})}>
+              <Ic n="trash" s={14}/>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── USERS ─────────────────────────────────────────────────────
+const UsersManager = ({toast}) => {
+  const [users,setUsers] = useState([]);
+  const [loading,setLoading] = useState(true);
+  const [search,setSearch] = useState('');
+  const [confirm,setConfirm] = useState(null);
+  const [detailUser,setDetailUser] = useState(null);
+
+  useEffect(()=>{
+    const u=db.collection('users').orderBy('createdAt','desc').onSnapshot(s=>{
+      setUsers(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);
+    });
+    return ()=>u();
+  },[]);
+
+  const toggleBlock=async(id,blocked)=>{
+    await db.collection('users').doc(id).update({blocked:!blocked});
+    toast.add(!blocked?'User blocked':'Unblocked');
+  };
+
+  const filtered=useMemo(()=>users.filter(u=>{
+    if(!search.trim())return true;
+    const q=search.toLowerCase();
+    return u.displayName?.toLowerCase().includes(q)||
+           u.email?.toLowerCase().includes(q)||
+           u.phoneNumber?.toLowerCase().includes(q)||
+           u.phone?.toLowerCase().includes(q);
+  }),[users,search]);
+
+  const providerIcon=u=>{
+    if(u.providerData?.[0]?.providerId==='google.com')return'🔵';
+    if(u.providerData?.[0]?.providerId==='apple.com')return'⚫';
+    return'✉️';
+  };
+
+  return (
+    <div className="fade-up">
+      {confirm&&<Confirm msg={`Block user "${confirm.name}"?`} onYes={()=>{toggleBlock(confirm.id,false);setConfirm(null);}} onNo={()=>setConfirm(null)}/>}
+
+      {/* User detail modal */}
+      {detailUser&&(
+        <div className="modal-bg scale-in" onClick={()=>setDetailUser(null)}>
+          <div className="modal slide-up" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+            <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,background:'var(--surface)',zIndex:10}}>
+              <h3 style={{fontWeight:800,fontSize:16}}>User Profile</h3>
+              <button className="btn btn-ghost" style={{padding:8}} onClick={()=>setDetailUser(null)}><Ic n="x" s={16}/></button>
+            </div>
+            <div style={{padding:24}}>
+              {/* Profile header */}
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center',marginBottom:24,textAlign:'center'}}>
+                <img src={detailUser.photoURL||`https://ui-avatars.com/api/?name=${encodeURIComponent(detailUser.displayName||'U')}&background=1a2d4a&color=F5A623&size=200`}
+                  style={{width:80,height:80,borderRadius:'50%',objectFit:'cover',border:`3px solid ${detailUser.blocked?'var(--danger)':'var(--accent)'}`,marginBottom:12}}/>
+                <p style={{fontSize:18,fontWeight:800,marginBottom:4}}>{detailUser.displayName||'Anonymous'}</p>
+                {detailUser.blocked&&<span className="badge" style={{background:'rgba(248,113,113,.1)',color:'var(--danger)',border:'1px solid rgba(248,113,113,.2)'}}>BLOCKED</span>}
+              </div>
+              {/* Details */}
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {[
+                  ['📧 Email', detailUser.email||'—'],
+                  ['📱 Phone', detailUser.phoneNumber||detailUser.phone||'—'],
+                  ['🔑 Provider', providerIcon(detailUser)+' '+(detailUser.providerData?.[0]?.providerId||'email')],
+                  ['📅 Joined', fmtDate(detailUser.createdAt)],
+                  ['❤️ Liked Posts', detailUser.likedPosts?.length||0],
+                  ['🔖 Saved Posts', detailUser.savedPosts?.length||0],
+                ].map(([k,v])=>(
+                  <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
+                    <span style={{fontSize:13,color:'var(--muted)',fontWeight:500}}>{k}</span>
+                    <span style={{fontSize:13,fontWeight:600,maxWidth:'60%',textAlign:'right',wordBreak:'break-all'}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Action button */}
+              <div style={{marginTop:20}}>
+                {detailUser.blocked?(
+                  <button className="btn btn-ghost" style={{width:'100%',padding:'11px'}} onClick={()=>{toggleBlock(detailUser.id,true);setDetailUser(null);}}>
+                    <Ic n="ok" s={14}/> Unblock User
+                  </button>
+                ):(
+                  <button className="btn btn-red" style={{width:'100%',padding:'11px',justifyContent:'center'}} onClick={()=>{setDetailUser(null);setConfirm({id:detailUser.id,name:detailUser.displayName});}}>
+                    <Ic n="ban" s={14}/> Block User
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
+        <div>
+          <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>Users</h1>
+          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{users.length} registered · <span style={{color:'var(--danger)'}}>{users.filter(u=>u.blocked).length} blocked</span></p>
+        </div>
+        <div style={{padding:'8px 14px',borderRadius:10,background:'rgba(245,166,35,.08)',border:'1px solid rgba(245,166,35,.2)',fontSize:12,fontWeight:700,color:'var(--accent)'}}>
+          {fmt(users.length)} total
+        </div>
+      </div>
+
+      {/* Search */}
+      <div style={{marginBottom:16}}>
+        <div style={{position:'relative'}}>
+          <div style={{position:'absolute',left:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none'}}><Ic n="search" s={15} c="var(--dim)"/></div>
+          <input className="inp" placeholder="Search by name, email or phone…" value={search} onChange={e=>setSearch(e.target.value)} style={{paddingLeft:40}}/>
+        </div>
+        <div style={{display:'flex',gap:10,marginTop:8}}>
+          {[['name','By Name'],['email','By Email'],['phone','By Phone']].map(([t,l])=>(
+            <div key={t} style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:999,background:'var(--surface2)',border:'1px solid var(--border)',fontSize:11,color:'var(--muted)'}}>
+              <Ic n={t==='name'?'users':t==='email'?'mail':'phone'} s={11}/> {l}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        {loading?[1,2,3].map(i=>(
+          <div key={i} style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',display:'flex',gap:12,alignItems:'center'}}>
+            <div className="shimmer" style={{width:48,height:48,borderRadius:'50%',flexShrink:0}}></div>
+            <div style={{flex:1}}>
+              <div className="shimmer" style={{height:13,borderRadius:6,width:'40%',marginBottom:8}}></div>
+              <div className="shimmer" style={{height:10,borderRadius:6,width:'60%'}}></div>
+            </div>
+          </div>
+        )):filtered.length===0?(
+          <div style={{padding:48,textAlign:'center',color:'var(--dim)'}}>
+            <Ic n="users" s={28} c="var(--border2)"/>
+            <p style={{marginTop:12,fontSize:13}}>No users found</p>
+          </div>
+        ):filtered.map(u=>(
+          <div key={u.id} className="row" style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}
+            onClick={()=>setDetailUser(u)}>
+            <div style={{position:'relative',flexShrink:0}}>
+              <img src={u.photoURL||`https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName||'U')}&background=1a2d4a&color=F5A623&size=80`}
+                style={{width:46,height:46,borderRadius:'50%',objectFit:'cover',border:`2px solid ${u.blocked?'var(--danger)':'var(--border)'}`}}/>
+              <span style={{position:'absolute',bottom:0,right:-2,fontSize:10,lineHeight:1}}>{providerIcon(u)}</span>
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3,flexWrap:'wrap'}}>
+                <p style={{fontSize:14,fontWeight:700}}>{u.displayName||'Anonymous'}</p>
+                {u.blocked&&<span className="badge" style={{background:'rgba(248,113,113,.1)',color:'var(--danger)',border:'1px solid rgba(248,113,113,.2)',fontSize:9}}>BLOCKED</span>}
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:2}}>
+                <Ic n="mail" s={10} c="var(--dim)"/>
+                <p style={{fontSize:11,color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.email||'—'}</p>
+              </div>
+              {(u.phoneNumber||u.phone)&&(
+                <div style={{display:'flex',alignItems:'center',gap:5}}>
+                  <Ic n="phone" s={10} c="var(--dim)"/>
+                  <p style={{fontSize:11,color:'var(--dim)'}}>{u.phoneNumber||u.phone}</p>
+                </div>
+              )}
+            </div>
+            <div style={{flexShrink:0,display:'flex',gap:6,alignItems:'center'}}>
+              <span style={{fontSize:10,color:'var(--dim)'}}>{timeAgo(u.createdAt)}</span>
+              {u.blocked?(
+                <button className="btn btn-ghost" style={{padding:'6px 10px',fontSize:11}} onClick={e=>{e.stopPropagation();toggleBlock(u.id,true);}}>Unblock</button>
+              ):(
+                <button className="btn btn-red" style={{padding:'6px 8px'}} onClick={e=>{e.stopPropagation();setConfirm({id:u.id,name:u.displayName});}}><Ic n="ban" s={14}/></button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── PUSH NOTIFICATIONS ────────────────────────────────────────
+const PushNotifs = ({toast}) => {
+  const [title,setTitle] = useState('');
+  const [body,setBody] = useState('');
+  const [sending,setSending] = useState(false);
+  const [serverKey,setServerKey] = useState(()=>{ try{return localStorage.getItem('fcm_sk')||'';}catch(e){return '';} });
+  const [tokenCount,setTokenCount] = useState(0);
+  const [history,setHistory] = useState([]);
+  const [showKey,setShowKey] = useState(false);
+
+  useEffect(()=>{
+    db.collection('fcm_tokens').get().then(s=>setTokenCount(s.size));
+    db.collection('notification_history').orderBy('sentAt','desc').limit(10).onSnapshot(s=>{
+      setHistory(s.docs.map(d=>({id:d.id,...d.data()})));
+    });
+  },[]);
+
+  const saveKey=()=>{ try{localStorage.setItem('fcm_sk',serverKey);}catch(e){} toast.add('Key saved'); };
+
+  const send=async()=>{
+    if(!title.trim()||!body.trim()){toast.add('Title and message required','error');return;}
+    setSending(true);
+    try{
+      const snap=await db.collection('fcm_tokens').get();
+      const tokens=snap.docs.map(d=>d.data().token).filter(Boolean);
+      if(!tokens.length){toast.add('No subscribers','error');setSending(false);return;}
+      await db.collection('notification_history').add({title,body,sentAt:firebase.firestore.FieldValue.serverTimestamp(),tokenCount:tokens.length,status:'sent'});
+      if(serverKey){
+        const batches=[];
+        for(let i=0;i<tokens.length;i+=1000) batches.push(tokens.slice(i,i+1000));
+        await Promise.all(batches.map(batch=>fetch('https://fcm.googleapis.com/fcm/send',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'key='+serverKey},body:JSON.stringify({registration_ids:batch,notification:{title,body},android:{priority:'high'},apns:{headers:{'apns-priority':'10'}}})})));
+      }
+      toast.add(`Sent to ${tokens.length} subscribers!`);
+      setTitle(''); setBody('');
+    }catch(e){toast.add(e.message,'error');}
+    finally{setSending(false);}
+  };
+
+  return (
+    <div className="fade-up">
+      <div style={{marginBottom:20}}>
+        <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>Push Alerts</h1>
+        <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{fmt(tokenCount)} subscribers</p>
+      </div>
+
+      {/* Compose */}
+      <div className="card" style={{padding:20,marginBottom:16}}>
+        <p style={{fontWeight:700,fontSize:14,marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
+          <Ic n="send" s={15} c="var(--accent)"/> Compose Alert
+        </p>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <Field label="Title" required>
+            <input className="inp" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Breaking: …"/>
+          </Field>
+          <Field label="Message" required>
+            <textarea className="inp" value={body} onChange={e=>setBody(e.target.value)} placeholder="Alert message…" style={{minHeight:100}}/>
+          </Field>
+          {title&&body&&(
+            <div style={{padding:14,background:'var(--surface2)',borderRadius:12,border:'1px solid var(--border)'}}>
+              <p style={{fontSize:10,fontWeight:700,color:'var(--dim)',letterSpacing:'.06em',marginBottom:10}}>PREVIEW</p>
+              <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+                <div style={{width:32,height:32,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                  <span style={{fontSize:10,fontWeight:900,color:'#050c18'}}>KWT</span>
+                </div>
+                <div>
+                  <p style={{fontSize:13,fontWeight:700,marginBottom:2}}>{title}</p>
+                  <p style={{fontSize:12,color:'var(--muted)',lineHeight:1.4}}>{body}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <button className="btn btn-accent" style={{width:'100%',padding:'13px',fontSize:14}} onClick={send} disabled={sending||!title||!body}>
+            {sending?<><span className="spinner" style={{width:16,height:16}}></span> Sending…</>:<><Ic n="send" s={15}/>Send to {fmt(tokenCount)} Subscribers</>}
+          </button>
+        </div>
+      </div>
+
+      {/* FCM key */}
+      <div className="card" style={{padding:20,marginBottom:16}}>
+        <p style={{fontWeight:700,fontSize:14,marginBottom:4,display:'flex',alignItems:'center',gap:8}}>
+          <Ic n="cog" s={15} c="var(--muted)"/> FCM Server Key
+        </p>
+        <p style={{fontSize:12,color:'var(--muted)',marginBottom:14,lineHeight:1.6}}>Firebase Console → Project Settings → Cloud Messaging → Legacy server key</p>
+        <div style={{display:'flex',gap:8}}>
+          <input className="inp" type={showKey?'text':'password'} value={serverKey} onChange={e=>setServerKey(e.target.value)} placeholder="AAAAxxx…" style={{flex:1}}/>
+          <button className="btn btn-ghost" style={{padding:'10px 12px',flexShrink:0}} onClick={()=>setShowKey(v=>!v)}><Ic n="eye" s={14}/></button>
+          <button className="btn btn-ghost" style={{padding:'10px 14px',flexShrink:0}} onClick={saveKey}>Save</button>
+        </div>
+        {serverKey&&<p style={{fontSize:11,color:'var(--success)',marginTop:8}}>✓ Saved locally</p>}
+      </div>
+
+      {/* History */}
+      <div className="card" style={{padding:20}}>
+        <p style={{fontWeight:700,fontSize:14,marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+          <Ic n="refresh" s={15} c="var(--muted)"/> History
+        </p>
+        {history.length===0?(
+          <p style={{fontSize:13,color:'var(--dim)',textAlign:'center',padding:'12px 0'}}>No notifications sent yet</p>
+        ):history.map(h=>(
+          <div key={h.id} style={{padding:'11px 0',borderBottom:'1px solid var(--border)',display:'flex',gap:10,alignItems:'flex-start'}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:'var(--success)',marginTop:5,flexShrink:0}}></div>
+            <div style={{flex:1,minWidth:0}}>
+              <p style={{fontSize:13,fontWeight:600,marginBottom:2}}>{h.title}</p>
+              <p style={{fontSize:11,color:'var(--dim)'}}>{timeAgo(h.sentAt)} · {fmt(h.tokenCount)} devices</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── SETTINGS ──────────────────────────────────────────────────
+const SettingsPage = ({user,toast}) => (
+  <div className="fade-up">
+    <div style={{marginBottom:20}}>
+      <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>Settings</h1>
+      <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>Account & configuration</p>
+    </div>
+    <div className="card" style={{padding:20,marginBottom:16}}>
+      <p style={{fontWeight:700,fontSize:14,marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+        <Ic n="star" s={15} c="var(--accent)"/> Your Account
+      </p>
+      <div style={{display:'flex',gap:14,alignItems:'center',padding:'16px',background:'var(--surface2)',borderRadius:12,border:'1px solid var(--border)'}}>
+        <img src={user.photoURL||`https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName||'A')}&background=F5A623&color=050c18&size=100`} style={{width:52,height:52,borderRadius:'50%',objectFit:'cover',border:'2px solid var(--accent)',flexShrink:0}}/>
+        <div>
+          <p style={{fontWeight:700,fontSize:15}}>{user.displayName||'Admin'}</p>
+          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{user.email}</p>
+          <p style={{fontSize:11,color:'var(--success)',marginTop:4,fontWeight:600}}>✓ Logged in</p>
+        </div>
+      </div>
+    </div>
+    <div className="card" style={{padding:20}}>
+      <p style={{fontWeight:700,fontSize:14,marginBottom:4,display:'flex',alignItems:'center',gap:8}}>
+        <Ic n="cog" s={15} c="var(--muted)"/> App Info
+      </p>
+      <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:14}}>
+        {[['Project','KWT News'],['Firebase','kwt-news'],['Version','2.0.0'],['Build','2026']].map(([k,v])=>(
+          <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
+            <span style={{fontSize:13,color:'var(--muted)'}}>{k}</span>
+            <span style={{fontSize:13,fontWeight:600,fontFamily:'DM Mono,monospace'}}>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+// ── CATEGORY MANAGER ─────────────────────────────────────────
+const CategoryManager = ({toast, onNavigate}) => {
+  const [counts,setCounts] = useState({});
+  const [loading,setLoading] = useState(true);
+
+  useEffect(()=>{
+    const u=db.collection('news').onSnapshot(s=>{
+      const c={};
+      CATEGORIES.forEach(cat=>{ c[cat.value]=0; });
+      s.docs.forEach(d=>{
+        const cat=d.data().category;
+        if(cat) c[cat]=(c[cat]||0)+1;
+      });
+      setCounts(c);
+      setLoading(false);
+    });
+    return ()=>u();
+  },[]);
+
+  return (
+    <div className="fade-up">
+      <div style={{marginBottom:24}}>
+        <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>Categories</h1>
+        <p style={{fontSize:12,color:'var(--muted)',marginTop:3}}>Manage the 5 news categories. Home feed hides special categories.</p>
+      </div>
+
+      {/* Info banner */}
+      <div style={{padding:'14px 16px',borderRadius:12,background:'rgba(96,165,250,.07)',border:'1px solid rgba(96,165,250,.18)',marginBottom:20,display:'flex',gap:12,alignItems:'flex-start'}}>
+        <span style={{fontSize:18,flexShrink:0}}>ℹ️</span>
+        <div>
+          <p style={{fontSize:13,fontWeight:700,color:'var(--info)',marginBottom:3}}>Category Rules</p>
+          <p style={{fontSize:12,color:'var(--muted)',lineHeight:1.6}}>
+            <strong style={{color:'var(--text)'}}>🏠 Kuwait &amp; 🌍 World</strong> appear on the Home feed.<br/>
+            <strong style={{color:'var(--accent)'}}>💼 Kuwait Jobs · 🛍️ Kuwait Offers · 😂 Funny &amp; Memes</strong> are <strong style={{color:'var(--danger)'}}>hidden from Home</strong> — they show only on their own tab/page.
+          </p>
+        </div>
+      </div>
+
+      {/* Category cards grid */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:14}}>
+        {CATEGORIES.map(cat=>{
+          const count=counts[cat.value]||0;
+          const isSpecial=['kuwait-jobs','kuwait-offers','funny-news-meme'].includes(cat.value);
+          return (
+            <div key={cat.value} style={{background:'var(--surface)',border:`1.5px solid ${isSpecial?'rgba(245,166,35,.25)':'var(--border)'}`,borderRadius:16,padding:18,transition:'transform .15s'}}
+              onMouseEnter={e=>e.currentTarget.style.transform='translateY(-2px)'}
+              onMouseLeave={e=>e.currentTarget.style.transform=''}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+                <span style={{fontSize:28}}>{cat.label.split(' ')[0]}</span>
+                {isSpecial
+                  ? <span style={{fontSize:9,fontWeight:800,padding:'3px 8px',borderRadius:999,background:'rgba(245,166,35,.12)',color:'var(--accent)',border:'1px solid rgba(245,166,35,.25)',letterSpacing:'.04em'}}>SPECIAL</span>
+                  : <span style={{fontSize:9,fontWeight:800,padding:'3px 8px',borderRadius:999,background:'rgba(52,211,153,.1)',color:'var(--success)',border:'1px solid rgba(52,211,153,.2)',letterSpacing:'.04em'}}>HOME</span>
+                }
+              </div>
+              <p style={{fontSize:14,fontWeight:700,marginBottom:3}}>{cat.label.replace(/^\S+\s/,'')}</p>
+              <p style={{fontSize:10,color:'var(--dim)',marginBottom:12,fontFamily:'DM Mono,monospace'}}>slug: {cat.value}</p>
+              <div style={{borderTop:'1px solid var(--border)',paddingTop:12,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div>
+                  {loading
+                    ? <div className="shimmer" style={{width:32,height:22,borderRadius:6}}></div>
+                    : <p style={{fontSize:26,fontWeight:800,color:cat.color,letterSpacing:'-.03em',lineHeight:1}}>{count}</p>
+                  }
+                  <p style={{fontSize:10,color:'var(--dim)',marginTop:2}}>articles</p>
+                </div>
+                <button className="btn btn-accent" style={{padding:'8px 14px',fontSize:12,gap:5}}
+                  onClick={()=>{ onNavigate&&onNavigate('news',cat.value); }}>
+                  <Ic n="news" s={12}/> View
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Total summary */}
+      <div style={{marginTop:20,padding:'14px 18px',borderRadius:12,background:'var(--surface2)',border:'1px solid var(--border)',display:'flex',gap:16,flexWrap:'wrap'}}>
+        <div>
+          <p style={{fontSize:22,fontWeight:800,color:'var(--accent)'}}>{Object.values(counts).reduce((a,b)=>a+b,0)}</p>
+          <p style={{fontSize:11,color:'var(--dim)'}}>Total Articles</p>
+        </div>
+        {CATEGORIES.map(c=>(
+          <div key={c.value} style={{display:'flex',flexDirection:'column',alignItems:'center',minWidth:60}}>
+            <p style={{fontSize:18,fontWeight:800,color:c.color}}>{counts[c.value]||0}</p>
+            <p style={{fontSize:9,color:'var(--dim)',textAlign:'center',lineHeight:1.3}}>{c.label.replace(/^\S+\s/,'')}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── PAGES CONFIG ──────────────────────────────────────────────
+const PAGES = [
+  {id:'dashboard',label:'Home',icon:'grid'},
+  {id:'news',label:'News',icon:'news'},
+  {id:'categories',label:'Categories',icon:'tag'},
+  {id:'ads',label:'Ads',icon:'ads'},
+  {id:'users',label:'Users',icon:'users'},
+  {id:'comments',label:'Comments',icon:'chat'},
+  {id:'notifications',label:'Alerts',icon:'bell'},
+  {id:'settings',label:'Settings',icon:'cog'},
+];
+
+// ── ADMIN LAYOUT ──────────────────────────────────────────────
+const Layout = ({user,onLogout}) => {
+  const [page,setPage] = useState('dashboard');
+  const [menuOpen,setMenuOpen] = useState(false);
+  const [navCat,setNavCat] = useState('all');
+  const toast = useToast();
+  const pg = PAGES.find(p=>p.id===page)||PAGES[0];
+
+  // Navigate from category to news with filter
+  const navigate = (pg, cat='all') => { setNavCat(cat); setPage(pg); };
+  // Direct nav (reset category filter)
+  const goPage = (id) => { setNavCat('all'); setPage(id); setMenuOpen(false); };
+
+  // Bottom nav pages (5 visible)
+  const bottomPages = PAGES.slice(0,5);
+
+  const renderPage = () => {
+    const p={toast};
+    switch(page){
+      case 'dashboard': return <Dashboard/>;
+      case 'news': return <NewsManager {...p} initCat={navCat}/>;
+      case 'categories': return <CategoryManager {...p} onNavigate={navigate}/>;
+      case 'ads': return <AdsManager {...p}/>;
+      case 'comments': return <CommentsManager {...p}/>;
+      case 'users': return <UsersManager {...p}/>;
+      case 'notifications': return <PushNotifs {...p}/>;
+      case 'settings': return <SettingsPage user={user} {...p}/>;
+      default: return <Dashboard/>;
+    }
+  };
+
+  return (
+    <div>
+      {/* Mobile slide-out menu overlay */}
+      {menuOpen&&(
+        <div style={{position:'fixed',inset:0,zIndex:200}} onClick={()=>setMenuOpen(false)}>
+          <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.6)',backdropFilter:'blur(4px)'}}></div>
+          <div className="slide-up" onClick={e=>e.stopPropagation()}
+            style={{position:'absolute',bottom:0,left:0,right:0,background:'var(--surface)',borderRadius:'20px 20px 0 0',border:'1px solid var(--border)',padding:'8px 0 calc(env(safe-area-inset-bottom) + 16px)',zIndex:201}}>
+            {/* Handle bar */}
+            <div style={{width:36,height:4,borderRadius:2,background:'var(--border2)',margin:'0 auto 16px'}}></div>
+            <p style={{padding:'0 20px 10px',fontSize:11,fontWeight:700,color:'var(--dim)',letterSpacing:'.06em'}}>MENU</p>
+            {PAGES.map(p=>(
+              <button key={p.id} onClick={()=>goPage(p.id)}
+                style={{display:'flex',alignItems:'center',gap:12,padding:'13px 20px',width:'100%',background:'transparent',border:'none',cursor:'pointer',
+                  color:page===p.id?'var(--accent)':'var(--text)',fontFamily:'Outfit',fontWeight:page===p.id?700:500,fontSize:15,borderLeft:page===p.id?'3px solid var(--accent)':'3px solid transparent'}}>
+                <Ic n={p.icon} s={18} c={page===p.id?'var(--accent)':'var(--muted)'}/>
+                {p.label}
+                {page===p.id&&<div style={{marginLeft:'auto',width:6,height:6,borderRadius:'50%',background:'var(--accent)'}}></div>}
+              </button>
+            ))}
+            <div style={{margin:'10px 16px 0',borderTop:'1px solid var(--border)',paddingTop:10}}>
+              <button onClick={()=>{setMenuOpen(false);onLogout();}}
+                style={{display:'flex',alignItems:'center',gap:12,padding:'13px 4px',width:'100%',background:'transparent',border:'none',cursor:'pointer',
+                  color:'var(--danger)',fontFamily:'Outfit',fontWeight:600,fontSize:15}}>
+                <Ic n="out" s={18} c="var(--danger)"/>
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Sidebar */}
+      <aside className="sidebar">
+        <div style={{padding:'18px 16px 14px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{width:36,height:36,borderRadius:10,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              <span style={{fontFamily:'Outfit',fontWeight:900,fontSize:12,color:'#050c18'}}>KWT</span>
+            </div>
+            <div>
+              <p style={{fontFamily:'Outfit',fontWeight:800,fontSize:14,lineHeight:1}}>KWT News</p>
+              <p style={{fontSize:10,color:'var(--dim)',marginTop:2}}>Admin Panel</p>
+            </div>
+          </div>
+        </div>
+        <nav style={{padding:'10px 8px',flex:1,overflowY:'auto'}}>
+          {PAGES.map(p=>(
+            <button key={p.id} className={`nav-btn ${page===p.id?'active':''}`} onClick={()=>goPage(p.id)}>
+              <Ic n={p.icon} s={15}/>
+              {p.label}
+              {page===p.id&&<div style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'var(--accent)'}}></div>}
+            </button>
+          ))}
+        </nav>
+        <div style={{padding:'10px 8px',borderTop:'1px solid var(--border)',flexShrink:0}}>
+          <div style={{padding:'10px 12px',borderRadius:10,display:'flex',gap:8,alignItems:'center',marginBottom:6}}>
+            <img src={user.photoURL||`https://ui-avatars.com/api/?name=A&background=F5A623&color=050c18`} style={{width:28,height:28,borderRadius:'50%',objectFit:'cover',border:'1.5px solid var(--border2)',flexShrink:0}}/>
+            <div style={{minWidth:0,flex:1}}>
+              <p style={{fontSize:12,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.displayName||'Admin'}</p>
+              <p style={{fontSize:10,color:'var(--dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.email}</p>
+            </div>
+          </div>
+          <button className="nav-btn" style={{color:'var(--danger)'}} onClick={onLogout}>
+            <Ic n="out" s={14} c="var(--danger)"/> Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="main-wrap">
+        {/* Top bar */}
+        <div style={{position:'sticky',top:0,background:'rgba(5,12,24,.92)',backdropFilter:'blur(16px)',WebkitBackdropFilter:'blur(16px)',borderBottom:'1px solid var(--border)',padding:'0 16px',height:52,display:'flex',alignItems:'center',justifyContent:'space-between',zIndex:30,flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            {/* Mobile logo */}
+            <div style={{display:'flex',alignItems:'center',gap:8}} className="mobile-logo">
+              <div style={{width:28,height:28,borderRadius:8,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <span style={{fontFamily:'Outfit',fontWeight:900,fontSize:10,color:'#050c18'}}>K</span>
+              </div>
+              <span style={{fontFamily:'Outfit',fontWeight:700,fontSize:15}}>{pg.label}</span>
+            </div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:999,background:'rgba(52,211,153,.07)',border:'1px solid rgba(52,211,153,.18)'}}>
+              <div className="pulse" style={{width:5,height:5,borderRadius:'50%',background:'var(--success)'}}></div>
+              <span style={{fontSize:10,color:'var(--success)',fontWeight:700,letterSpacing:'.04em'}}>LIVE</span>
+            </div>
+            {/* Mobile hamburger menu button */}
+            <button className="btn btn-icon" id="mob-menu" style={{display:'none'}} onClick={()=>setMenuOpen(v=>!v)}>
+              <Ic n="menu" s={18}/>
+            </button>
+          </div>
+        </div>
+        <style>{`@media(max-width:767px){#mob-menu{display:inline-flex!important}}`}</style>
+
+        {/* Page content */}
+        <div style={{padding:'20px 16px 24px',maxWidth:900,margin:'0 auto'}}>
+          {renderPage()}
+        </div>
+      </div>
+
+      {/* Bottom Nav (mobile) */}
+      <nav className="bnav">
+        <div style={{display:'flex',alignItems:'stretch'}}>
+          {PAGES.slice(0,5).map(p=>(
+            <button key={p.id} className={`bnav-item ${page===p.id?'active':''}`} onClick={()=>goPage(p.id)}>
+              <Ic n={p.icon} s={20}/>
+              <span>{p.label}</span>
+              <div className="dot"></div>
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <toast.Toast/>
+    </div>
+  );
+};
+
+// ── ROOT APP ──────────────────────────────────────────────────
+const App = () => {
+  const [user,setUser] = useState(null);
+  const [checking,setChecking] = useState(true);
+
+  useEffect(()=>{
+    const u=auth.onAuthStateChanged(u=>{
+      setUser(u||null); setChecking(false);
+    });
+    return ()=>u();
+  },[]);
+
+  const logout=()=>{ auth.signOut(); setUser(null); };
+
+  if(checking) return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:16}}>
+      <div style={{width:48,height:48,borderRadius:14,background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 32px rgba(245,166,35,.3)'}}>
+        <span style={{fontFamily:'Outfit',fontWeight:900,fontSize:13,color:'#050c18'}}>KWT</span>
+      </div>
+      <div className="spinner"></div>
+    </div>
+  );
+
+  if(!user) return <Login onLogin={setUser}/>;
+  return <Layout user={user} onLogout={logout}/>;
+};
+
+createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+  </html>
