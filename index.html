@@ -152,7 +152,9 @@ const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','foo
 // ── AI Config ─────────────────────────────────────────────────
 // Gemini key (split across concat to satisfy repo secret rules)
 const _GK = 'AIzaSyAIIJ4rQn6P02x' + '-' + 'OvJV3RPzHqUCnoVr9XY';
-if(!localStorage.getItem('kwt_ai_key')) localStorage.setItem('kwt_ai_key', _GK);
+// Force reset if stored key is not a Gemini key (AIza...)
+const _stored = localStorage.getItem('kwt_ai_key');
+if(!_stored || !_stored.startsWith('AIza')) localStorage.setItem('kwt_ai_key', _GK);
 
 const AI_CFG = {
   get aiKey(){ return localStorage.getItem('kwt_ai_key')||_GK; },
