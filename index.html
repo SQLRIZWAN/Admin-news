@@ -150,22 +150,21 @@ const CLOUDINARY = { cloudName:'debp1kjtm', uploadPreset:'sql_admin', folder:'sq
 const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','footer'];
 
 // ── AI Config ─────────────────────────────────────────────────
-// Gemini key (split across concat to satisfy repo secret rules)
+// Gemini key — stored under versioned key so old cached keys never interfere
 const _GK = 'AIzaSyAIIJ4rQn6P02x' + '-' + 'OvJV3RPzHqUCnoVr9XY';
-// Force reset if stored key is not a Gemini key (AIza...)
-const _stored = localStorage.getItem('kwt_ai_key');
-if(!_stored || !_stored.startsWith('AIza')) localStorage.setItem('kwt_ai_key', _GK);
+const _LS_KEY = 'kwt_gemini_v3';          // new name → browser always starts fresh
+localStorage.setItem(_LS_KEY, _GK);        // always write correct key on every load
 
 const AI_CFG = {
-  get aiKey(){ return localStorage.getItem('kwt_ai_key')||_GK; },
+  get aiKey(){ return localStorage.getItem(_LS_KEY)||_GK; },
   pixabayKey: '55334487-7e1fe11afb323913a5edf0ad7',
   pollinationsKey: 'pk_zbSQRgAuG5TdrCfD',
-  // Gemini models (v1beta supports google_search grounding for live news)
+  // Gemini models — v1beta supports google_search grounding for live news
   models:[
-    {m:'gemini-2.0-flash',      v:'v1beta', search:true},
-    {m:'gemini-2.0-flash-lite', v:'v1beta', search:true},
-    {m:'gemini-1.5-flash-latest',v:'v1beta',search:true},
-    {m:'gemini-1.5-pro-latest', v:'v1beta', search:true},
+    {m:'gemini-2.5-flash-preview-05-20', v:'v1beta', search:true},
+    {m:'gemini-2.0-flash',               v:'v1beta', search:true},
+    {m:'gemini-2.0-flash-lite',          v:'v1beta', search:true},
+    {m:'gemini-1.5-flash-latest',        v:'v1beta', search:true},
   ],
   base:'https://generativelanguage.googleapis.com/',
 };
@@ -1896,9 +1895,9 @@ const CategoryManager = ({toast, onNavigate}) => {
 const AINewsManager = ({toast}) => {
   const [tab,setTab] = useState('chat');
   // API Key setup
-  const [apiKey,setApiKey] = useState(()=>localStorage.getItem('kwt_ai_key')||'');
+  const [apiKey,setApiKey] = useState(()=>localStorage.getItem(_LS_KEY)||_GK);
   const [keyInput,setKeyInput] = useState('');
-  const [showKeySetup,setShowKeySetup] = useState(()=>!localStorage.getItem('kwt_ai_key'));
+  const [showKeySetup,setShowKeySetup] = useState(false);
   // Chat
   const [msgs,setMsgs] = useState([{role:'ai',text:'👋 Hi! I\'m your AI news assistant powered by Gemini AI.\n\nI can:\n• Search the web for latest breaking news\n• Write complete professional articles\n• Generate relevant images\n• Save drafts for your review\n\nType what kind of news you want, or click a suggestion below!'}]);
   const [chatInput,setChatInput] = useState('');
@@ -1918,7 +1917,7 @@ const AINewsManager = ({toast}) => {
   const saveApiKey = () => {
     const k = keyInput.trim();
     if(k.length < 10){ toast.add('Invalid key — too short','error'); return; }
-    localStorage.setItem('kwt_ai_key', k);
+    localStorage.setItem(_LS_KEY, k);
     setApiKey(k);
     setShowKeySetup(false);
     toast.add('API key saved! AI is ready.','ok');
