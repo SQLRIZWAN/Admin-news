@@ -151,44 +151,45 @@ const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','foo
 
 // ── AI Config ─────────────────────────────────────────────────
 const AI_CFG = {
-  geminiKey: 'AIzaSyAIIJ4rQn6P02x-OvJV3RPzHqUCnoVr9XY',
+  // OpenAI key stored in localStorage — set it from AI Settings
+  get openaiKey(){ return localStorage.getItem('kwt_openai_key')||''; },
   pixabayKey: '55334487-7e1fe11afb323913a5edf0ad7',
   pollinationsKey: 'pk_zbSQRgAuG5TdrCfD',
-  // Models tried in order if quota is exceeded
-  geminiModels: ['gemini-1.5-flash','gemini-1.5-flash-8b','gemini-2.5-flash-preview-05-20','gemini-2.0-flash'],
-  geminiBase: 'https://generativelanguage.googleapis.com/v1beta/models/',
+  // Models tried in order — search-preview models browse the web natively
+  openaiModels: ['gpt-4o-mini-search-preview','gpt-4o-search-preview','gpt-4o-mini','gpt-4o'],
 };
 
-const callGemini = async (userPrompt, useSearch=true) => {
-  const body = {
-    contents:[{role:'user',parts:[{text:userPrompt}]}],
-    generationConfig:{temperature:0.75,maxOutputTokens:4096},
-  };
-  if(useSearch) body.tools=[{google_search:{}}];
+const callAI = async (userPrompt) => {
   let lastErr = null;
-  for(const model of AI_CFG.geminiModels){
+  for(const model of AI_CFG.openaiModels){
     try{
-      const res = await fetch(`${AI_CFG.geminiBase}${model}:generateContent?key=${AI_CFG.geminiKey}`,{
-        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
+      const body = {
+        model,
+        messages:[{role:'user',content:userPrompt}],
+        max_tokens: 4096,
+      };
+      const res = await fetch('https://api.openai.com/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+AI_CFG.openaiKey},
+        body:JSON.stringify(body)
       });
       const data = await res.json();
       if(data.error){
-        // If quota exceeded, try next model
-        if(data.error.code===429||/quota|rate.?limit/i.test(data.error.message)){
-          lastErr = new Error(data.error.message);
-          continue;
+        if(data.error.code==='model_not_found'||data.error.type==='invalid_request_error'){
+          lastErr=new Error(data.error.message); continue;
         }
-        throw new Error(data.error.message||'Gemini error');
+        throw new Error(data.error.message||'OpenAI error');
       }
-      return data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+      return data.choices?.[0]?.message?.content||'';
     }catch(e){
       lastErr=e;
-      // Only retry on quota/network errors
-      if(!/quota|rate.?limit|429|network/i.test(e.message)) throw e;
+      if(!/model_not_found|invalid_request/i.test(e.message)) throw e;
     }
   }
-  throw lastErr||new Error('All Gemini models quota exceeded. Try again later.');
+  throw lastErr||new Error('AI error. Please try again.');
 };
+// Keep backward compat alias
+const callGemini = callAI;
 
 const parseJsonFromText = text => {
   try{ return JSON.parse(text); }catch(e){}
@@ -1883,8 +1884,12 @@ const CategoryManager = ({toast, onNavigate}) => {
 // ── AI NEWS MANAGER ───────────────────────────────────────────
 const AINewsManager = ({toast}) => {
   const [tab,setTab] = useState('chat');
+  // API Key setup
+  const [apiKey,setApiKey] = useState(()=>localStorage.getItem('kwt_openai_key')||'');
+  const [keyInput,setKeyInput] = useState('');
+  const [showKeySetup,setShowKeySetup] = useState(()=>!localStorage.getItem('kwt_openai_key'));
   // Chat
-  const [msgs,setMsgs] = useState([{role:'ai',text:'👋 Hi! I\'m your AI news assistant powered by Gemini.\n\nI can:\n• Search the web for latest breaking news\n• Write complete professional articles\n• Generate relevant images\n• Save drafts for your review\n\nType what kind of news you want, or click a suggestion below!'}]);
+  const [msgs,setMsgs] = useState([{role:'ai',text:'👋 Hi! I\'m your AI news assistant powered by GPT-4o.\n\nI can:\n• Search the web for latest breaking news\n• Write complete professional articles\n• Generate relevant images\n• Save drafts for your review\n\nType what kind of news you want, or click a suggestion below!'}]);
   const [chatInput,setChatInput] = useState('');
   const [chatBusy,setChatBusy] = useState(false);
   const chatEndRef = useRef(null);
@@ -1898,6 +1903,15 @@ const AINewsManager = ({toast}) => {
   const [drafts,setDrafts] = useState([]);
   const [draftsLoading,setDraftsLoading] = useState(true);
   const [actionId,setActionId] = useState(null);
+
+  const saveApiKey = () => {
+    const k = keyInput.trim();
+    if(!k.startsWith('sk-')){ toast.add('Invalid key — must start with sk-','error'); return; }
+    localStorage.setItem('kwt_openai_key', k);
+    setApiKey(k);
+    setShowKeySetup(false);
+    toast.add('API key saved!','ok');
+  };
 
   useEffect(()=>{
     if(tab==='drafts') fetchDrafts();
@@ -1977,7 +1991,7 @@ User: "${userText}"
 Search the web if relevant. Be concise and helpful.
 Return ONLY JSON: {"reply": "your response max 300 chars", "article": null}`;
 
-      const responseText=await callGemini(prompt,true);
+      const responseText=await callAI(prompt);
       const parsed=parseJsonFromText(responseText);
       const replyText=parsed?.reply||responseText.slice(0,600);
       const article=parsed?.article||null;
@@ -2023,7 +2037,7 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
   "isBreaking": false,
   "newsFoundAbout": "1 sentence about what actual news you found"
 }`;
-      const text=await callGemini(prompt,true);
+      const text=await callAI(prompt);
       const article=parseJsonFromText(text);
       if(!article||!article.title)throw new Error('Could not parse AI response. Please try again.');
       const imageUrl=await getImg(article.imageQuery||article.title,imgSrc==='ai');
@@ -2075,16 +2089,49 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
     color:tab===t?'#050c18':'var(--muted)',
   });
 
+  if(showKeySetup) return (
+    <div className="fade-up" style={{maxWidth:480,margin:'40px auto'}}>
+      <div style={{textAlign:'center',marginBottom:28}}>
+        <div style={{width:56,height:56,borderRadius:16,background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'inline-flex',alignItems:'center',justifyContent:'center',marginBottom:14,boxShadow:'0 4px 24px rgba(99,102,241,.4)'}}>
+          <Ic n="sparkle" s={24} c="#fff"/>
+        </div>
+        <h1 style={{fontSize:22,fontWeight:800,marginBottom:6}}>Setup AI News Studio</h1>
+        <p style={{fontSize:13,color:'var(--muted)',lineHeight:1.6}}>Enter your OpenAI API key to enable AI-powered news generation. Key is stored locally in your browser only.</p>
+      </div>
+      <div className="card" style={{padding:24}}>
+        <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:8}}>OPENAI API KEY</label>
+        <input className="inp" type="password" value={keyInput} onChange={e=>setKeyInput(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&saveApiKey()}
+          placeholder="sk-proj-..." style={{marginBottom:14}}/>
+        <button className="btn btn-accent" onClick={saveApiKey} style={{width:'100%',padding:13,fontSize:14}}>
+          🚀 Save &amp; Start Using AI
+        </button>
+        <p style={{fontSize:11,color:'var(--dim)',textAlign:'center',marginTop:12}}>
+          Get your key at platform.openai.com → API Keys
+        </p>
+      </div>
+      {apiKey&&(
+        <button style={{display:'block',margin:'12px auto 0',background:'none',border:'none',color:'var(--muted)',fontSize:12,cursor:'pointer',fontFamily:'Outfit'}}
+          onClick={()=>setShowKeySetup(false)}>
+          ← Back to AI Studio
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="fade-up">
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
         <div style={{width:42,height:42,borderRadius:13,background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:'0 4px 20px rgba(99,102,241,.35)'}}>
           <Ic n="sparkle" s={20} c="#fff"/>
         </div>
-        <div>
+        <div style={{flex:1}}>
           <h1 style={{fontSize:20,fontWeight:800,lineHeight:1}}>AI News Studio</h1>
-          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>Generate, search &amp; publish news with Gemini AI</p>
+          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>Generate, search &amp; publish news with OpenAI GPT-4o</p>
         </div>
+        <button className="btn btn-ghost" style={{fontSize:11,padding:'6px 10px'}} onClick={()=>setShowKeySetup(true)}>
+          🔑 API Key
+        </button>
       </div>
 
       {/* Tab Bar */}
