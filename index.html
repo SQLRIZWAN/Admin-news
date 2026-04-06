@@ -154,7 +154,9 @@ const AI_CFG = {
   geminiKey: 'AIzaSyAIIJ4rQn6P02x-OvJV3RPzHqUCnoVr9XY',
   pixabayKey: '55334487-7e1fe11afb323913a5edf0ad7',
   pollinationsKey: 'pk_zbSQRgAuG5TdrCfD',
-  geminiUrl: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+  // Models tried in order if quota is exceeded
+  geminiModels: ['gemini-1.5-flash','gemini-1.5-flash-8b','gemini-2.5-flash-preview-05-20','gemini-2.0-flash'],
+  geminiBase: 'https://generativelanguage.googleapis.com/v1beta/models/',
 };
 
 const callGemini = async (userPrompt, useSearch=true) => {
@@ -163,12 +165,29 @@ const callGemini = async (userPrompt, useSearch=true) => {
     generationConfig:{temperature:0.75,maxOutputTokens:4096},
   };
   if(useSearch) body.tools=[{google_search:{}}];
-  const res = await fetch(`${AI_CFG.geminiUrl}?key=${AI_CFG.geminiKey}`,{
-    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
-  });
-  const data = await res.json();
-  if(data.error) throw new Error(data.error.message||'Gemini error');
-  return data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+  let lastErr = null;
+  for(const model of AI_CFG.geminiModels){
+    try{
+      const res = await fetch(`${AI_CFG.geminiBase}${model}:generateContent?key=${AI_CFG.geminiKey}`,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
+      });
+      const data = await res.json();
+      if(data.error){
+        // If quota exceeded, try next model
+        if(data.error.code===429||/quota|rate.?limit/i.test(data.error.message)){
+          lastErr = new Error(data.error.message);
+          continue;
+        }
+        throw new Error(data.error.message||'Gemini error');
+      }
+      return data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+    }catch(e){
+      lastErr=e;
+      // Only retry on quota/network errors
+      if(!/quota|rate.?limit|429|network/i.test(e.message)) throw e;
+    }
+  }
+  throw lastErr||new Error('All Gemini models quota exceeded. Try again later.');
 };
 
 const parseJsonFromText = text => {
