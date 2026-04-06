@@ -151,44 +151,50 @@ const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','foo
 
 // ── AI Config ─────────────────────────────────────────────────
 const AI_CFG = {
-  // OpenAI key stored in localStorage — set it from AI Settings
-  get openaiKey(){ return localStorage.getItem('kwt_openai_key')||''; },
+  get aiKey(){ return localStorage.getItem('kwt_ai_key')||''; },
   pixabayKey: '55334487-7e1fe11afb323913a5edf0ad7',
   pollinationsKey: 'pk_zbSQRgAuG5TdrCfD',
-  // Models tried in order — search-preview models browse the web natively
-  openaiModels: ['gpt-4o-mini-search-preview','gpt-4o-search-preview','gpt-4o-mini','gpt-4o'],
+  // OpenRouter models with web search (perplexity/sonar has live internet access)
+  models: ['perplexity/sonar-pro','perplexity/sonar','openai/gpt-4o-mini','openai/gpt-4o'],
+  openrouterUrl: 'https://openrouter.ai/api/v1/chat/completions',
 };
 
 const callAI = async (userPrompt) => {
+  const key = AI_CFG.aiKey;
+  if(!key) throw new Error('API key not set. Click 🔑 API Key button to add your key.');
   let lastErr = null;
-  for(const model of AI_CFG.openaiModels){
+  for(const model of AI_CFG.models){
     try{
-      const body = {
-        model,
-        messages:[{role:'user',content:userPrompt}],
-        max_tokens: 4096,
-      };
-      const res = await fetch('https://api.openai.com/v1/chat/completions',{
+      const res = await fetch(AI_CFG.openrouterUrl,{
         method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+AI_CFG.openaiKey},
-        body:JSON.stringify(body)
+        headers:{
+          'Content-Type':'application/json',
+          'Authorization':'Bearer '+key,
+          'HTTP-Referer':'https://sqlrizwan.github.io/Admin-news',
+          'X-Title':'KWT News Admin',
+        },
+        body:JSON.stringify({
+          model,
+          messages:[{role:'user',content:userPrompt}],
+          max_tokens:4096,
+        })
       });
       const data = await res.json();
       if(data.error){
-        if(data.error.code==='model_not_found'||data.error.type==='invalid_request_error'){
+        // Try next model if this one fails
+        if(/model|not found|invalid/i.test(data.error.message||'')){
           lastErr=new Error(data.error.message); continue;
         }
-        throw new Error(data.error.message||'OpenAI error');
+        throw new Error(data.error.message||'AI error');
       }
       return data.choices?.[0]?.message?.content||'';
     }catch(e){
       lastErr=e;
-      if(!/model_not_found|invalid_request/i.test(e.message)) throw e;
+      if(!/model|not found|invalid/i.test(e.message)) throw e;
     }
   }
   throw lastErr||new Error('AI error. Please try again.');
 };
-// Keep backward compat alias
 const callGemini = callAI;
 
 const parseJsonFromText = text => {
@@ -1885,9 +1891,9 @@ const CategoryManager = ({toast, onNavigate}) => {
 const AINewsManager = ({toast}) => {
   const [tab,setTab] = useState('chat');
   // API Key setup
-  const [apiKey,setApiKey] = useState(()=>localStorage.getItem('kwt_openai_key')||'');
+  const [apiKey,setApiKey] = useState(()=>localStorage.getItem('kwt_ai_key')||'');
   const [keyInput,setKeyInput] = useState('');
-  const [showKeySetup,setShowKeySetup] = useState(()=>!localStorage.getItem('kwt_openai_key'));
+  const [showKeySetup,setShowKeySetup] = useState(()=>!localStorage.getItem('kwt_ai_key'));
   // Chat
   const [msgs,setMsgs] = useState([{role:'ai',text:'👋 Hi! I\'m your AI news assistant powered by GPT-4o.\n\nI can:\n• Search the web for latest breaking news\n• Write complete professional articles\n• Generate relevant images\n• Save drafts for your review\n\nType what kind of news you want, or click a suggestion below!'}]);
   const [chatInput,setChatInput] = useState('');
@@ -1907,10 +1913,10 @@ const AINewsManager = ({toast}) => {
   const saveApiKey = () => {
     const k = keyInput.trim();
     if(!k.startsWith('sk-')){ toast.add('Invalid key — must start with sk-','error'); return; }
-    localStorage.setItem('kwt_openai_key', k);
+    localStorage.setItem('kwt_ai_key', k);
     setApiKey(k);
     setShowKeySetup(false);
-    toast.add('API key saved!','ok');
+    toast.add('API key saved! AI is ready.','ok');
   };
 
   useEffect(()=>{
@@ -2096,18 +2102,18 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
           <Ic n="sparkle" s={24} c="#fff"/>
         </div>
         <h1 style={{fontSize:22,fontWeight:800,marginBottom:6}}>Setup AI News Studio</h1>
-        <p style={{fontSize:13,color:'var(--muted)',lineHeight:1.6}}>Enter your OpenAI API key to enable AI-powered news generation. Key is stored locally in your browser only.</p>
+        <p style={{fontSize:13,color:'var(--muted)',lineHeight:1.6}}>Enter your OpenRouter API key to enable AI-powered news generation with live web search. Key is stored only in your browser.</p>
       </div>
       <div className="card" style={{padding:24}}>
-        <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:8}}>OPENAI API KEY</label>
+        <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:8}}>OPENROUTER API KEY</label>
         <input className="inp" type="password" value={keyInput} onChange={e=>setKeyInput(e.target.value)}
           onKeyDown={e=>e.key==='Enter'&&saveApiKey()}
-          placeholder="sk-proj-..." style={{marginBottom:14}}/>
+          placeholder="sk-or-v1-..." style={{marginBottom:14}}/>
         <button className="btn btn-accent" onClick={saveApiKey} style={{width:'100%',padding:13,fontSize:14}}>
           🚀 Save &amp; Start Using AI
         </button>
         <p style={{fontSize:11,color:'var(--dim)',textAlign:'center',marginTop:12}}>
-          Get your key at platform.openai.com → API Keys
+          Get your key at openrouter.ai → Keys
         </p>
       </div>
       {apiKey&&(
@@ -2127,7 +2133,7 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
         </div>
         <div style={{flex:1}}>
           <h1 style={{fontSize:20,fontWeight:800,lineHeight:1}}>AI News Studio</h1>
-          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>Generate, search &amp; publish news with OpenAI GPT-4o</p>
+          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>Generate, search &amp; publish news with OpenRouter AI</p>
         </div>
         <button className="btn btn-ghost" style={{fontSize:11,padding:'6px 10px'}} onClick={()=>setShowKeySetup(true)}>
           🔑 API Key
