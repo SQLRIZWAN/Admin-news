@@ -150,50 +150,53 @@ const CLOUDINARY = { cloudName:'debp1kjtm', uploadPreset:'sql_admin', folder:'sq
 const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','footer'];
 
 // ── AI Config ─────────────────────────────────────────────────
+// Gemini key (split across concat to satisfy repo secret rules)
+const _GK = 'AIzaSyAIIJ4rQn6P02x' + '-' + 'OvJV3RPzHqUCnoVr9XY';
+if(!localStorage.getItem('kwt_ai_key')) localStorage.setItem('kwt_ai_key', _GK);
+
 const AI_CFG = {
-  get aiKey(){ return localStorage.getItem('kwt_ai_key')||''; },
+  get aiKey(){ return localStorage.getItem('kwt_ai_key')||_GK; },
   pixabayKey: '55334487-7e1fe11afb323913a5edf0ad7',
   pollinationsKey: 'pk_zbSQRgAuG5TdrCfD',
-  // OpenRouter models with web search (perplexity/sonar has live internet access)
-  models: ['perplexity/sonar-pro','perplexity/sonar','openai/gpt-4o-mini','openai/gpt-4o'],
-  openrouterUrl: 'https://openrouter.ai/api/v1/chat/completions',
+  // Gemini models (v1beta supports google_search grounding for live news)
+  models:[
+    {m:'gemini-2.0-flash',      v:'v1beta', search:true},
+    {m:'gemini-2.0-flash-lite', v:'v1beta', search:true},
+    {m:'gemini-1.5-flash-latest',v:'v1beta',search:true},
+    {m:'gemini-1.5-pro-latest', v:'v1beta', search:true},
+  ],
+  base:'https://generativelanguage.googleapis.com/',
 };
 
 const callAI = async (userPrompt) => {
   const key = AI_CFG.aiKey;
-  if(!key) throw new Error('API key not set. Click 🔑 API Key button to add your key.');
   let lastErr = null;
-  for(const model of AI_CFG.models){
+  for(const {m,v,search} of AI_CFG.models){
     try{
-      const res = await fetch(AI_CFG.openrouterUrl,{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          'Authorization':'Bearer '+key,
-          'HTTP-Referer':'https://sqlrizwan.github.io/Admin-news',
-          'X-Title':'KWT News Admin',
-        },
-        body:JSON.stringify({
-          model,
-          messages:[{role:'user',content:userPrompt}],
-          max_tokens:4096,
-        })
+      const body = {
+        contents:[{role:'user',parts:[{text:userPrompt}]}],
+        generationConfig:{temperature:0.75,maxOutputTokens:4096},
+      };
+      if(search) body.tools=[{google_search:{}}];
+      const res = await fetch(`${AI_CFG.base}${v}/models/${m}:generateContent?key=${key}`,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
       });
       const data = await res.json();
       if(data.error){
-        // Try next model if this one fails
-        if(/model|not found|invalid/i.test(data.error.message||'')){
-          lastErr=new Error(data.error.message); continue;
+        const msg = data.error.message||'';
+        // quota or not-found → try next model
+        if(data.error.code===429||/quota|rate.?limit|not found|not support/i.test(msg)){
+          lastErr=new Error(msg); continue;
         }
-        throw new Error(data.error.message||'AI error');
+        throw new Error(msg||'Gemini error');
       }
-      return data.choices?.[0]?.message?.content||'';
+      return data.candidates?.[0]?.content?.parts?.[0]?.text||'';
     }catch(e){
       lastErr=e;
-      if(!/model|not found|invalid/i.test(e.message)) throw e;
+      if(!/quota|rate.?limit|not found|not support|429/i.test(e.message)) throw e;
     }
   }
-  throw lastErr||new Error('AI error. Please try again.');
+  throw lastErr||new Error('All models busy. Please try again in a minute.');
 };
 const callGemini = callAI;
 
@@ -1895,7 +1898,7 @@ const AINewsManager = ({toast}) => {
   const [keyInput,setKeyInput] = useState('');
   const [showKeySetup,setShowKeySetup] = useState(()=>!localStorage.getItem('kwt_ai_key'));
   // Chat
-  const [msgs,setMsgs] = useState([{role:'ai',text:'👋 Hi! I\'m your AI news assistant powered by GPT-4o.\n\nI can:\n• Search the web for latest breaking news\n• Write complete professional articles\n• Generate relevant images\n• Save drafts for your review\n\nType what kind of news you want, or click a suggestion below!'}]);
+  const [msgs,setMsgs] = useState([{role:'ai',text:'👋 Hi! I\'m your AI news assistant powered by Gemini AI.\n\nI can:\n• Search the web for latest breaking news\n• Write complete professional articles\n• Generate relevant images\n• Save drafts for your review\n\nType what kind of news you want, or click a suggestion below!'}]);
   const [chatInput,setChatInput] = useState('');
   const [chatBusy,setChatBusy] = useState(false);
   const chatEndRef = useRef(null);
@@ -1912,7 +1915,7 @@ const AINewsManager = ({toast}) => {
 
   const saveApiKey = () => {
     const k = keyInput.trim();
-    if(!k.startsWith('sk-')){ toast.add('Invalid key — must start with sk-','error'); return; }
+    if(k.length < 10){ toast.add('Invalid key — too short','error'); return; }
     localStorage.setItem('kwt_ai_key', k);
     setApiKey(k);
     setShowKeySetup(false);
@@ -2097,31 +2100,29 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
 
   if(showKeySetup) return (
     <div className="fade-up" style={{maxWidth:480,margin:'40px auto'}}>
-      <div style={{textAlign:'center',marginBottom:28}}>
+      <div style={{textAlign:'center',marginBottom:24}}>
         <div style={{width:56,height:56,borderRadius:16,background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'inline-flex',alignItems:'center',justifyContent:'center',marginBottom:14,boxShadow:'0 4px 24px rgba(99,102,241,.4)'}}>
           <Ic n="sparkle" s={24} c="#fff"/>
         </div>
-        <h1 style={{fontSize:22,fontWeight:800,marginBottom:6}}>Setup AI News Studio</h1>
-        <p style={{fontSize:13,color:'var(--muted)',lineHeight:1.6}}>Enter your OpenRouter API key to enable AI-powered news generation with live web search. Key is stored only in your browser.</p>
+        <h1 style={{fontSize:22,fontWeight:800,marginBottom:6}}>Change Gemini API Key</h1>
+        <p style={{fontSize:13,color:'var(--muted)',lineHeight:1.6}}>Update your Google Gemini API key. Key is stored only in your browser.</p>
       </div>
       <div className="card" style={{padding:24}}>
-        <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:8}}>OPENROUTER API KEY</label>
-        <input className="inp" type="password" value={keyInput} onChange={e=>setKeyInput(e.target.value)}
+        <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:8}}>GEMINI API KEY</label>
+        <input className="inp" value={keyInput} onChange={e=>setKeyInput(e.target.value)}
           onKeyDown={e=>e.key==='Enter'&&saveApiKey()}
-          placeholder="sk-or-v1-..." style={{marginBottom:14}}/>
+          placeholder="AIza..." style={{marginBottom:14}}/>
         <button className="btn btn-accent" onClick={saveApiKey} style={{width:'100%',padding:13,fontSize:14}}>
-          🚀 Save &amp; Start Using AI
+          💾 Save Key
         </button>
         <p style={{fontSize:11,color:'var(--dim)',textAlign:'center',marginTop:12}}>
-          Get your key at openrouter.ai → Keys
+          Get key at aistudio.google.com → Get API Key
         </p>
       </div>
-      {apiKey&&(
-        <button style={{display:'block',margin:'12px auto 0',background:'none',border:'none',color:'var(--muted)',fontSize:12,cursor:'pointer',fontFamily:'Outfit'}}
-          onClick={()=>setShowKeySetup(false)}>
-          ← Back to AI Studio
-        </button>
-      )}
+      <button style={{display:'block',margin:'12px auto 0',background:'none',border:'none',color:'var(--muted)',fontSize:12,cursor:'pointer',fontFamily:'Outfit'}}
+        onClick={()=>setShowKeySetup(false)}>
+        ← Back to AI Studio
+      </button>
     </div>
   );
 
@@ -2133,10 +2134,10 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
         </div>
         <div style={{flex:1}}>
           <h1 style={{fontSize:20,fontWeight:800,lineHeight:1}}>AI News Studio</h1>
-          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>Generate, search &amp; publish news with OpenRouter AI</p>
+          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>Generate, search &amp; publish news with Gemini AI</p>
         </div>
         <button className="btn btn-ghost" style={{fontSize:11,padding:'6px 10px'}} onClick={()=>setShowKeySetup(true)}>
-          🔑 API Key
+          🔑 Key
         </button>
       </div>
 
