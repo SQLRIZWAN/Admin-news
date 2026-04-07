@@ -2403,7 +2403,7 @@ const getOrCreateSourceLogo = async (sourceName) => {
   return genUrl;
 };
 
-const AINewsManager = ({toast}) => {
+const AINewsManager = ({toast, onBack}) => {
   const [tab,setTab] = useState('chat');
   // API Key setup
   const [apiKey,setApiKey] = useState(()=>localStorage.getItem(_LS_KEY)||_GK);
@@ -2541,7 +2541,7 @@ const AINewsManager = ({toast}) => {
       thumbnail:'',
       category:article.category||'world',
       source:article.source||'KWT News AI',
-      sourceLogo:'',
+      sourceLogo:article.sourceLogo||'',
       readTime:article.readTime||'3 min read',
       isBreaking:article.isBreaking||false,
       mediaType:isVideo ? 'video' : 'image',
@@ -2754,12 +2754,18 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
   return (
     <div className="fade-up">
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
-        <div style={{width:42,height:42,borderRadius:13,background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:'0 4px 20px rgba(99,102,241,.35)'}}>
-          <Ic n="sparkle" s={20} c="#fff"/>
+        {onBack&&(
+          <button onClick={onBack} style={{display:'flex',alignItems:'center',gap:5,background:'var(--surface2)',border:'1.5px solid var(--border)',borderRadius:10,color:'var(--muted)',cursor:'pointer',padding:'9px 13px',fontFamily:'Outfit',fontWeight:700,fontSize:13,flexShrink:0}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+        )}
+        <div style={{width:36,height:36,borderRadius:11,background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <Ic n="sparkle" s={18} c="#fff"/>
         </div>
         <div style={{flex:1}}>
-          <h1 style={{fontSize:20,fontWeight:800,lineHeight:1}}>AI News Studio</h1>
-          <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>Generate, search &amp; publish news with Gemini AI</p>
+          <h1 style={{fontSize:18,fontWeight:800,lineHeight:1}}>AI News Studio</h1>
+          <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Gemini AI · Video · Voice-over</p>
         </div>
         <button className="btn btn-ghost" style={{fontSize:11,padding:'6px 10px'}} onClick={()=>setShowKeySetup(true)}>
           🔑 Key
@@ -2769,7 +2775,6 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
       {/* Tab Bar */}
       <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
         <button style={tbStyle('chat')} onClick={()=>setTab('chat')}>💬 AI Chat</button>
-        <button style={tbStyle('generate')} onClick={()=>setTab('generate')}>⚡ Auto Generate</button>
         <button style={tbStyle('drafts')} onClick={()=>setTab('drafts')}>
           📝 Drafts{drafts.length>0?` (${drafts.length})`:''}
         </button>
@@ -2890,115 +2895,6 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
         </div>
       )}
 
-      {/* ─── AUTO GENERATE TAB ─── */}
-      {tab==='generate'&&(
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <div className="card" style={{padding:20}}>
-            <p style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',marginBottom:16}}>GENERATE SETTINGS</p>
-            <div style={{display:'grid',gap:14}}>
-              <div>
-                <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:6}}>CATEGORY</label>
-                <select className="inp" value={genCat} onChange={e=>setGenCat(e.target.value)}>
-                  {CATEGORIES.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:6}}>TOPIC / KEYWORD <span style={{color:'var(--dim)',fontWeight:400}}>(optional)</span></label>
-                <input className="inp" value={genTopic} onChange={e=>setGenTopic(e.target.value)}
-                  placeholder="e.g. economy, sports, technology, oil prices..."
-                  onKeyDown={e=>e.key==='Enter'&&generate()}/>
-              </div>
-              <div>
-                <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:8}}>IMAGE SOURCE</label>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                  {[{v:'pixabay',l:'🖼 Pixabay (Stock)'},{v:'ai',l:'🎨 AI Generated'}].map(opt=>(
-                    <button key={opt.v} onClick={()=>setImgSrc(opt.v)}
-                      style={{padding:'10px 8px',borderRadius:10,border:`1.5px solid ${imgSrc===opt.v?'var(--accent)':'var(--border)'}`,background:imgSrc===opt.v?'rgba(245,166,35,.1)':'var(--surface2)',color:imgSrc===opt.v?'var(--accent)':'var(--muted)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Outfit'}}>
-                      {opt.l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <button className="btn btn-accent" onClick={generate} disabled={genBusy} style={{width:'100%',padding:13}}>
-                {genBusy
-                  ?<><div className="spinner" style={{width:16,height:16}}></div> Searching web &amp; writing...</>
-                  :<>⚡ Generate News Article</>}
-              </button>
-            </div>
-          </div>
-
-          {/* Preview */}
-          {preview&&(
-            <div className="card fade-up" style={{overflow:'hidden'}}>
-              <div style={{position:'relative'}}>
-                <img src={preview.imageUrl} alt="" style={{width:'100%',height:210,objectFit:'cover',display:'block'}} onError={e=>e.target.style.display='none'}/>
-                {preview.isBreaking&&<div style={{position:'absolute',top:12,left:12}}><span className="badge" style={{background:'#ef4444',color:'#fff',fontSize:11,padding:'4px 10px'}}>⚡ BREAKING</span></div>}
-                <div style={{position:'absolute',top:12,right:12}}><span className="badge" style={{background:'rgba(99,102,241,.9)',color:'#fff',fontSize:10}}>AI GENERATED</span></div>
-              </div>
-              <div style={{padding:20}}>
-                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
-                  <span className="badge" style={{background:'rgba(255,255,255,.07)',color:'var(--muted)',border:'1px solid var(--border)',fontSize:10}}>
-                    {CATEGORIES.find(c=>c.value===preview.category)?.label||preview.category}
-                  </span>
-                  <span style={{fontSize:11,color:'var(--dim)'}}>{preview.readTime}</span>
-                  <span style={{fontSize:11,color:'var(--dim)'}}>• {preview.source}</span>
-                </div>
-                <h2 style={{fontSize:16,fontWeight:800,lineHeight:1.4,marginBottom:10}}>{preview.title}</h2>
-                <p style={{fontSize:13,color:'var(--muted)',lineHeight:1.65,marginBottom:12}}>{preview.summary}</p>
-                {preview.newsFoundAbout&&(
-                  <div style={{padding:'8px 12px',borderRadius:8,background:'rgba(96,165,250,.08)',border:'1px solid rgba(96,165,250,.2)',marginBottom:14}}>
-                    <p style={{fontSize:11,color:'var(--info)'}}>🔍 News source: {preview.newsFoundAbout}</p>
-                  </div>
-                )}
-                {preview.content&&(
-                  <details style={{marginBottom:14}}>
-                    <summary style={{fontSize:12,color:'var(--accent)',cursor:'pointer',fontWeight:600,userSelect:'none'}}>▸ View full article text</summary>
-                    <p style={{fontSize:13,color:'var(--muted)',lineHeight:1.7,marginTop:10,whiteSpace:'pre-wrap'}}>{preview.content}</p>
-                  </details>
-                )}
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-                  <button className="btn btn-accent" onClick={savePreview} style={{fontSize:12,padding:'9px 6px'}}>💾 Save Draft</button>
-                  <button className="btn btn-ghost" onClick={regenImage} style={{fontSize:12,padding:'9px 6px'}}>🔄 New Image</button>
-                </div>
-                {/* Video generation */}
-                <div style={{borderTop:'1px solid var(--border)',paddingTop:12}}>
-                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
-                    <span style={{fontSize:12,color:'var(--muted)',fontWeight:600}}>🎬 Video Duration:</span>
-                    {[10,15,20,30].map(s=>(
-                      <button key={s} onClick={()=>setVideoDur(s)}
-                        style={{padding:'4px 10px',borderRadius:6,border:`1.5px solid ${videoDur===s?'var(--accent)':'var(--border)'}`,background:videoDur===s?'rgba(245,166,35,.1)':'var(--surface2)',color:videoDur===s?'var(--accent)':'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'Outfit',fontWeight:600}}>
-                        {s}s
-                      </button>
-                    ))}
-                  </div>
-                  {videoBusy ? (
-                    <div>
-                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                        <span style={{fontSize:12,color:'var(--muted)'}}>🎬 Rendering video...</span>
-                        <span style={{fontSize:12,color:'var(--accent)',fontWeight:700}}>{videoProgress}%</span>
-                      </div>
-                      <div style={{height:6,borderRadius:3,background:'var(--surface2)',overflow:'hidden'}}>
-                        <div style={{height:'100%',width:videoProgress+'%',background:'var(--accent)',transition:'width .3s',borderRadius:3}}></div>
-                      </div>
-                    </div>
-                  ) : videoResult?.articleTitle===preview?.title ? (
-                    <>
-                      <video src={videoResult.url} controls playsInline style={{width:'100%',borderRadius:10,background:'#000',maxHeight:200,marginBottom:8}}/>
-                      <button className="btn btn-accent" onClick={downloadVideo} style={{width:'100%',fontSize:13,padding:'10px'}}>
-                        ⬇️ Download Video (.webm)
-                      </button>
-                    </>
-                  ) : (
-                    <button className="btn btn-ghost" onClick={()=>genVideo(preview)} style={{width:'100%',fontSize:13,padding:'10px'}}>
-                      🎬 Generate {videoDur}s News Video
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ─── DRAFTS TAB ─── */}
       {tab==='drafts'&&(
@@ -3161,7 +3057,7 @@ const Layout = ({user,onLogout}) => {
     switch(page){
       case 'dashboard': return <Dashboard/>;
       case 'news': return <NewsManager {...p} initCat={navCat}/>;
-      case 'ai': return <AINewsManager {...p}/>;
+      case 'ai': return <AINewsManager {...p} onBack={()=>goPage('dashboard')}/>;
       case 'categories': return <CategoryManager {...p} onNavigate={navigate}/>;
       case 'ads': return <AdsManager {...p}/>;
       case 'comments': return <CommentsManager {...p}/>;
