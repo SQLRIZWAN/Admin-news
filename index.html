@@ -102,8 +102,8 @@ textarea.inp{resize:vertical;min-height:88px}
 @media(min-width:600px){
   .modal-bg{align-items:center;padding:16px}
 }
-.modal{background:var(--surface);border:1px solid var(--border);width:100%;max-width:580px;max-height:92vh;overflow-y:auto;border-radius:20px 20px 0 0;position:relative}
-@media(min-width:600px){.modal{border-radius:20px;max-height:88vh}}
+.modal{background:var(--surface);border:1px solid var(--border);width:100%;max-width:580px;height:82vh;max-height:82vh;overflow:hidden;border-radius:20px 20px 0 0;position:relative;display:flex;flex-direction:column}
+@media(min-width:600px){.modal{border-radius:20px;height:auto;max-height:88vh}}
 body.modal-open{overflow:hidden;position:fixed;width:100%}
 
 /* Row */
@@ -777,7 +777,7 @@ const LogoPicker = ({value, onSelect}) => {
       {/* Modal */}
       {open&&(
         <div className="modal-bg scale-in" onClick={()=>setOpen(false)}>
-          <div className="modal" style={{display:'flex',flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
             {/* Header */}
             <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <p style={{fontWeight:800,fontSize:16}}>🏷 Source Logo</p>
