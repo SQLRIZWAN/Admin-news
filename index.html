@@ -2298,8 +2298,8 @@ const makeNewsVideoWithVoice = async (article, durSecs=25) => {
           const dest=audioCtx.createMediaStreamDestination();
           const src=audioCtx.createBufferSource();
           src.buffer=decoded; src.connect(dest); src.connect(audioCtx.destination);
-          setTimeout(()=>{try{src.start();}catch(e){}},1500);
-          audioStream=dest.stream;
+          // Don't start here — start AFTER rec.start() so timing is correct
+          audioStream={stream:dest.stream, src, ctx:audioCtx};
         }
       }
     }
@@ -2333,8 +2333,9 @@ const makeNewsVideoWithVoice = async (article, durSecs=25) => {
 
     // MediaRecorder
     const videoStream=cv.captureStream(25);
-    const recStream=audioStream?new MediaStream([...videoStream.getVideoTracks(),...audioStream.getAudioTracks()]):videoStream;
-    const mimes=audioStream?['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']:['video/webm;codecs=vp9','video/webm'];
+    const audioMediaStream=audioStream?audioStream.stream:null;
+    const recStream=audioMediaStream?new MediaStream([...videoStream.getVideoTracks(),...audioMediaStream.getAudioTracks()]):videoStream;
+    const mimes=audioMediaStream?['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']:['video/webm;codecs=vp9','video/webm'];
     const mime=mimes.find(m=>MediaRecorder.isTypeSupported(m))||'video/webm';
     let rec;
     try{rec=new MediaRecorder(recStream,{mimeType:mime,videoBitsPerSecond:4000000});}
@@ -2343,6 +2344,13 @@ const makeNewsVideoWithVoice = async (article, durSecs=25) => {
     rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
     rec.onstop=()=>{if(audioCtx)audioCtx.close().catch(()=>{});const blob=new Blob(chunks,{type:'video/webm'});resolve({url:URL.createObjectURL(blob),blob});};
     rec.start(100);
+    // Start audio 1.5s after recording begins (resume AudioContext first — required on mobile)
+    if(audioStream){
+      const{src:aSrc,ctx:aCtx}=audioStream;
+      setTimeout(()=>{
+        try{(aCtx.resume?aCtx.resume():Promise.resolve()).then(()=>{try{aSrc.start();}catch(e){}}).catch(()=>{try{aSrc.start();}catch(e){}});}catch(e){}
+      },1500);
+    }
     // setTimeout guarantees stop even if rAF pauses (background tab)
     const stopAt=setTimeout(()=>{try{rec.stop();}catch(e){}},durSecs*1000+600);
 
