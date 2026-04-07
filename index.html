@@ -2313,6 +2313,9 @@ const makeNewsVideoWithVoice = async (article, durSecs=22) => {
     const tickerFull=`${title}  •  ${catInfo.label.replace(/^\S+\s/,'')}  •  ${source}  •  KWT News  •  ${dateStr}  •  `;
     let tickerX=W;
 
+    // Polyfill roundRect for older Android Chrome
+    if(!ctx.roundRect) ctx.roundRect=function(x,y,w,h,r){const R=Math.min(r,w/2,h/2);this.moveTo(x+R,y);this.lineTo(x+w-R,y);this.arcTo(x+w,y,x+w,y+R,R);this.lineTo(x+w,y+h-R);this.arcTo(x+w,y+h,x+w-R,y+h,R);this.lineTo(x+R,y+h);this.arcTo(x,y+h,x,y+h-R,R);this.lineTo(x,y+R);this.arcTo(x,y,x+R,y,R);this.closePath();};
+
     const render=(bgImg,logoImg)=>{
       const videoStream=cv.captureStream(25);
       const recStream=audioStream?new MediaStream([...videoStream.getVideoTracks(),...audioStream.getAudioTracks()]):videoStream;
@@ -2449,9 +2452,10 @@ const AINewsManager = ({toast, onBack}) => {
     fd.append('file', blob, 'kwt-news-'+Date.now()+'.webm');
     fd.append('upload_preset', CLOUDINARY.uploadPreset);
     fd.append('folder', 'sql_users');
-    const res = await fetch(CLOUDINARY.uploadUrl, {method:'POST', body:fd});
+    // Use explicit video endpoint (auto/upload may reject .webm depending on preset)
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/video/upload`, {method:'POST', body:fd});
     const data = await res.json();
-    if(data.error) throw new Error(data.error.message);
+    if(data.error) throw new Error('Cloudinary: '+data.error.message);
     return data.secure_url;
   };
 
@@ -2615,29 +2619,59 @@ Return ONLY JSON: {"reply": "your response max 300 chars", "article": null}`;
       let imageUrl='';
       try{ imageUrl = await getImg(article.imageQuery||article.title, false); }catch(e){}
 
-      // 3. Render video with voice-over
+      // 3. Save text+logo draft immediately so something always saves
+      setVideoStatus('saving'); toast.add('💾 Saving draft...','info');
+      const fullArticle = {...article, imageUrl, sourceLogo, source:src};
+      let docRef;
+      try{ docRef = await db.collection('news').add({
+        title: fullArticle.title||'',
+        summary: fullArticle.summary||'',
+        content: fullArticle.content||'',
+        category: fullArticle.category||'general',
+        source: fullArticle.source||'KWT News',
+        sourceLogo: fullArticle.sourceLogo||'',
+        imageUrl: fullArticle.imageUrl||'',
+        videoUrl: '',
+        mediaType: 'video',
+        readTime: fullArticle.readTime||'3 min read',
+        isBreaking: fullArticle.isBreaking||false,
+        hidden: true,
+        aiGenerated: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      }); }catch(e2){ throw new Error('Draft save failed: '+e2.message); }
+
+      // 4. Render video with voice-over
       setVideoStatus('rendering'); setVideoProgress(5);
       toast.add('🎬 Rendering video with voice-over...','info');
       let prog=5;
       videoTimerRef.current=setInterval(()=>{
         prog=Math.min(prog+1,82); setVideoProgress(prog);
       },500);
-      const fullArticle = {...article, imageUrl, sourceLogo, source:src};
-      const result = await makeNewsVideoWithVoice(fullArticle, videoDur);
-      clearInterval(videoTimerRef.current);
-      setVideoProgress(85);
-      setVideoResult({url:result.url, blob:result.blob, article:fullArticle, articleTitle:article.title});
+      let videoUrl='';
+      try{
+        const result = await makeNewsVideoWithVoice(fullArticle, videoDur);
+        clearInterval(videoTimerRef.current);
+        setVideoProgress(85);
+        setVideoResult({url:result.url, blob:result.blob, article:fullArticle, articleTitle:article.title});
 
-      // 4. Upload to Cloudinary
-      setVideoStatus('uploading'); toast.add('☁️ Uploading to cloud...','info');
-      const videoUrl = await uploadVideoBlob(result.blob);
-      setVideoProgress(100);
+        // 5. Upload to Cloudinary
+        setVideoStatus('uploading'); toast.add('☁️ Uploading to cloud...','info');
+        videoUrl = await uploadVideoBlob(result.blob);
+        setVideoProgress(100);
 
-      // 5. Save to Firestore draft
-      await saveDraft({...fullArticle, videoUrl});
-      setVideoStatus(''); setVideoBusy(false);
-      toast.add('✅ Video draft saved with voice & logo!','ok');
-      setMsgs(p=>[...p,{role:'ai',text:'✅ Video draft saved! Go to the Drafts tab to review and publish.'}]);
+        // 6. Update draft with videoUrl
+        await db.collection('news').doc(docRef.id).update({videoUrl, mediaType:'video', updatedAt: firebase.firestore.FieldValue.serverTimestamp()});
+        setVideoStatus(''); setVideoBusy(false);
+        toast.add('✅ Video draft saved with voice & logo!','ok');
+        setMsgs(p=>[...p,{role:'ai',text:'✅ Video draft saved! Go to the Drafts tab to review and publish.'}]);
+      }catch(e2){
+        clearInterval(videoTimerRef.current);
+        // Video failed but text draft already saved — still show success
+        setVideoStatus(''); setVideoBusy(false);
+        toast.add('⚠️ Text draft saved but video failed. Check Drafts tab.','error');
+        setMsgs(p=>[...p,{role:'ai',text:'⚠️ Draft saved (text+logo only). Video rendering failed — check Drafts tab.'}]);
+      }
       fetchDrafts();
     }catch(e){
       clearInterval(videoTimerRef.current);
