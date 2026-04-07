@@ -777,7 +777,7 @@ const LogoPicker = ({value, onSelect}) => {
       {/* Modal */}
       {open&&(
         <div className="modal-bg scale-in" onClick={()=>setOpen(false)}>
-          <div className="modal" onClick={e=>e.stopPropagation()}>
+          <div className="modal" style={{display:'flex',flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
             {/* Header */}
             <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <p style={{fontWeight:800,fontSize:16}}>🏷 Source Logo</p>
@@ -793,7 +793,6 @@ const LogoPicker = ({value, onSelect}) => {
               {tab==='select'&&(
                 <>
                   <div style={{position:'relative',marginBottom:14}}>
-                    <Ic n="search" s={15} c="var(--dim)"/>
                     <input className="inp" value={search} onChange={e=>setSearch(e.target.value)}
                       placeholder="Search by name..." style={{paddingLeft:36}}/>
                     <div style={{position:'absolute',top:'50%',left:12,transform:'translateY(-50%)',pointerEvents:'none'}}><Ic n="search" s={15} c="var(--dim)"/></div>
