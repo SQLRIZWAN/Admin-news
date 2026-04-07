@@ -714,6 +714,144 @@ const CATEGORIES = [
 
 const BLANK = {title:'',summary:'',content:'',imageUrl:'',thumbnail:'',category:'kuwait',source:'KWT News',sourceLogo:'',readTime:'3 min read',isBreaking:false,mediaType:'image'};
 
+// ── Logo Picker ────────────────────────────────────────────────
+const LogoPicker = ({value, onSelect}) => {
+  const [open,setOpen] = useState(false);
+  const [tab,setTab] = useState('select');
+  const [logos,setLogos] = useState([]);
+  const [loading,setLoading] = useState(false);
+  const [search,setSearch] = useState('');
+  const [newName,setNewName] = useState('');
+  const [newUrl,setNewUrl] = useState('');
+  const [saving,setSaving] = useState(false);
+
+  const loadLogos = async()=>{
+    setLoading(true);
+    try{
+      const snap = await db.collection('logos').orderBy('name').get();
+      setLogos(snap.docs.map(d=>({id:d.id,...d.data()})));
+    }catch(e){}
+    setLoading(false);
+  };
+
+  useEffect(()=>{ if(open) loadLogos(); },[open]);
+
+  const addLogo = async()=>{
+    if(!newUrl||!newName.trim()) return;
+    setSaving(true);
+    await db.collection('logos').add({url:newUrl,name:newName.trim(),createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    setNewName(''); setNewUrl(''); setSaving(false); setTab('select'); loadLogos();
+  };
+
+  const deleteLogo = async(id,e)=>{
+    e.stopPropagation();
+    await db.collection('logos').doc(id).delete();
+    setLogos(p=>p.filter(l=>l.id!==id));
+  };
+
+  const filtered = logos.filter(l=>!search||l.name.toLowerCase().includes(search.toLowerCase()));
+  const tbS = active=>({padding:'8px 16px',borderRadius:8,border:'none',cursor:'pointer',fontSize:13,fontWeight:700,fontFamily:'Outfit',background:active?'var(--accent)':'var(--surface2)',color:active?'#050c18':'var(--muted)'});
+
+  return (
+    <>
+      {/* Trigger button */}
+      <div onClick={()=>setOpen(true)} style={{cursor:'pointer',border:`2px dashed ${value?'var(--success)':'var(--border2)'}`,borderRadius:12,padding:14,background:'var(--surface2)',transition:'border .2s'}}>
+        {value ? (
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <img src={value} style={{width:40,height:40,objectFit:'contain',borderRadius:8,background:'#fff',padding:4,flexShrink:0}} alt="logo"/>
+            <div style={{flex:1}}>
+              <p style={{fontSize:12,fontWeight:700,color:'var(--success)'}}>✅ Logo selected</p>
+              <p style={{fontSize:11,color:'var(--muted)'}}>Tap to change</p>
+            </div>
+            <button onClick={e=>{e.stopPropagation();onSelect('');}} style={{background:'rgba(248,113,113,.15)',border:'1px solid rgba(248,113,113,.3)',borderRadius:6,color:'var(--danger)',cursor:'pointer',padding:'4px 8px',fontSize:11,fontWeight:700}}>Remove</button>
+          </div>
+        ):(
+          <div style={{textAlign:'center',padding:'8px 0'}}>
+            <Ic n="img" s={22} c="var(--dim)"/>
+            <p style={{fontSize:13,color:'var(--muted)',marginTop:6,fontWeight:600}}>Tap to select source logo</p>
+            <p style={{fontSize:11,color:'var(--dim)',marginTop:2}}>From your logo collection</p>
+          </div>
+        )}
+      </div>
+
+      {/* Modal */}
+      {open&&(
+        <div className="modal-bg scale-in" onClick={()=>setOpen(false)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            {/* Header */}
+            <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+              <p style={{fontWeight:800,fontSize:16}}>🏷 Source Logo</p>
+              <button onClick={()=>setOpen(false)} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,color:'var(--muted)',cursor:'pointer',width:32,height:32,fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+            </div>
+            {/* Tabs */}
+            <div style={{padding:'12px 20px',borderBottom:'1px solid var(--border)',display:'flex',gap:8,flexShrink:0}}>
+              <button style={tbS(tab==='select')} onClick={()=>setTab('select')}>🖼 Select Logo</button>
+              <button style={tbS(tab==='add')} onClick={()=>setTab('add')}>➕ Add Logo</button>
+            </div>
+            {/* Body */}
+            <div style={{padding:20,overflowY:'auto',flex:1}}>
+              {tab==='select'&&(
+                <>
+                  <div style={{position:'relative',marginBottom:14}}>
+                    <Ic n="search" s={15} c="var(--dim)"/>
+                    <input className="inp" value={search} onChange={e=>setSearch(e.target.value)}
+                      placeholder="Search by name..." style={{paddingLeft:36}}/>
+                    <div style={{position:'absolute',top:'50%',left:12,transform:'translateY(-50%)',pointerEvents:'none'}}><Ic n="search" s={15} c="var(--dim)"/></div>
+                  </div>
+                  {loading?(
+                    <div style={{textAlign:'center',padding:40}}><div className="spinner"></div></div>
+                  ):filtered.length===0?(
+                    <div style={{textAlign:'center',padding:40}}>
+                      <p style={{fontSize:32,marginBottom:10}}>🖼</p>
+                      <p style={{fontWeight:700,marginBottom:4}}>No logos yet</p>
+                      <p style={{fontSize:12,color:'var(--muted)'}}>Go to "Add Logo" tab to upload your first logo</p>
+                    </div>
+                  ):(
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:10}}>
+                      {filtered.map(logo=>(
+                        <div key={logo.id} onClick={()=>{onSelect(logo.url);setOpen(false);}}
+                          style={{cursor:'pointer',border:`2px solid ${value===logo.url?'var(--accent)':'var(--border)'}`,borderRadius:10,padding:'10px 8px',background:value===logo.url?'rgba(245,166,35,.07)':'var(--surface2)',textAlign:'center',position:'relative',transition:'border .15s'}}>
+                          {value===logo.url&&<div style={{position:'absolute',top:4,right:4,width:16,height:16,borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#050c18',fontWeight:800}}>✓</div>}
+                          <img src={logo.url} style={{width:44,height:44,objectFit:'contain',borderRadius:6,background:'#fff',padding:4,display:'block',margin:'0 auto 6px'}} alt={logo.name}/>
+                          <p style={{fontSize:10,fontWeight:700,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginBottom:4}}>{logo.name}</p>
+                          <button onClick={e=>deleteLogo(logo.id,e)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--danger)',fontSize:11,padding:'2px 4px'}}>🗑️</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+              {tab==='add'&&(
+                <div style={{display:'flex',flexDirection:'column',gap:14}}>
+                  <ImgUpload value={newUrl} onChange={setNewUrl} label="LOGO IMAGE" accept="image"/>
+                  <div>
+                    <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:6}}>LOGO NAME</label>
+                    <input className="inp" value={newName} onChange={e=>setNewName(e.target.value)}
+                      placeholder="e.g. BBC News, Al Jazeera, KWT News..."
+                      onKeyDown={e=>e.key==='Enter'&&addLogo()}/>
+                  </div>
+                  {newUrl&&(
+                    <div style={{padding:'10px 14px',borderRadius:10,background:'var(--surface2)',border:'1px solid var(--border)',display:'flex',alignItems:'center',gap:12}}>
+                      <img src={newUrl} style={{width:36,height:36,objectFit:'contain',background:'#fff',borderRadius:6,padding:3}} alt="preview"/>
+                      <div>
+                        <p style={{fontSize:11,color:'var(--muted)'}}>Preview</p>
+                        <p style={{fontSize:13,fontWeight:700}}>{newName||'(no name yet)'}</p>
+                      </div>
+                    </div>
+                  )}
+                  <button className="btn btn-accent" onClick={addLogo} disabled={!newUrl||!newName.trim()||saving} style={{width:'100%',padding:13,fontSize:14}}>
+                    {saving?'Saving...':'💾 Add to Collection'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 const NewsForm = ({editing, initialForm, onSave, onCancel, toast}) => {
   const [form, setForm] = useState(initialForm || BLANK);
   const [saving, setSaving] = useState(false);
@@ -746,23 +884,23 @@ const NewsForm = ({editing, initialForm, onSave, onCancel, toast}) => {
     <div className="fade-up" style={{maxWidth:860,margin:'0 auto'}}>
 
       {/* ── Top Bar ── */}
-      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:28,flexWrap:'wrap'}}>
-        <button className="btn btn-ghost" style={{padding:'9px 12px',gap:6,flexShrink:0}} onClick={onCancel}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          Back
-        </button>
-        <div style={{flex:1,minWidth:0}}>
-          <h1 style={{fontFamily:'Outfit',fontSize:22,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>
-            {editing ? '✏️ Edit Article' : '📝 New Article'}
-          </h1>
-          <p style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{editing ? 'Update the article fields below' : 'Fill in all fields and publish'}</p>
-        </div>
-        <div style={{display:'flex',gap:10,flexShrink:0}}>
-          <button className="btn btn-ghost" onClick={onCancel}>Discard</button>
-          <button className="btn btn-accent" onClick={save} disabled={saving} style={{minWidth:130,fontSize:14}}>
+      <div style={{marginBottom:24}}>
+        {/* Row 1: back + save */}
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+          <button onClick={onCancel} style={{display:'flex',alignItems:'center',gap:6,background:'var(--surface2)',border:'1.5px solid var(--border)',borderRadius:10,color:'var(--muted)',cursor:'pointer',padding:'9px 14px',fontFamily:'Outfit',fontWeight:700,fontSize:13,flexShrink:0}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <div style={{flex:1}}>
+            <h1 style={{fontFamily:'Outfit',fontSize:20,fontWeight:800,letterSpacing:'-.02em',lineHeight:1.1}}>
+              {editing ? '✏️ Edit Article' : '📝 New Article'}
+            </h1>
+            <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{editing ? 'Update fields then save' : 'Fill all fields and publish'}</p>
+          </div>
+          <button className="btn btn-accent" onClick={save} disabled={saving} style={{flexShrink:0,padding:'10px 18px',fontSize:13}}>
             {saving
-              ? <><span className="spinner" style={{width:16,height:16}}/> Saving…</>
-              : <><Ic n={editing?'ok':'send'} s={15}/>{editing?'Update Article':'Publish Now'}</>
+              ? <><span className="spinner" style={{width:14,height:14}}/> Saving…</>
+              : <><Ic n={editing?'ok':'send'} s={14}/>{editing?'Update':'Publish'}</>
             }
           </button>
         </div>
@@ -900,16 +1038,7 @@ const NewsForm = ({editing, initialForm, onSave, onCancel, toast}) => {
           {/* Source Logo */}
           <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:16,padding:20}}>
             <p style={{fontSize:11,fontWeight:800,color:'var(--muted)',letterSpacing:'.08em',marginBottom:14}}>🏷 SOURCE LOGO</p>
-            <ImgUpload value={form.sourceLogo} onChange={v=>F({sourceLogo:v})} label=""/>
-            {form.sourceLogo && (
-              <div style={{marginTop:12,display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--surface2)',borderRadius:10,border:'1px solid var(--border)'}}>
-                <img src={form.sourceLogo} style={{width:36,height:36,objectFit:'cover',borderRadius:8}} alt="logo"/>
-                <div>
-                  <p style={{fontSize:12,fontWeight:600,color:'var(--success)'}}>✅ Logo uploaded</p>
-                  <p style={{fontSize:10,color:'var(--dim)',marginTop:1}}>{form.source || 'Source'}</p>
-                </div>
-              </div>
-            )}
+            <LogoPicker value={form.sourceLogo} onSelect={v=>F({sourceLogo:v})}/>
           </div>
 
           {/* Live Preview Card */}
@@ -2070,8 +2199,8 @@ const AINewsManager = ({toast}) => {
       const result = await makeNewsVideo(article, videoDur);
       clearInterval(videoTimerRef.current);
       setVideoProgress(100);
-      setVideoResult({url: result.url, article});
-      toast.add('Video ready! Click Download to save.','ok');
+      setVideoResult({url: result.url, article, articleTitle: article.title});
+      toast.add('Video ready! Scroll up to find it or click Download.','ok');
     } catch(e){
       clearInterval(videoTimerRef.current);
       toast.add('Video error: '+e.message,'error');
@@ -2352,15 +2481,56 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
                   border:m.role==='ai'?'1px solid var(--border)':'none',
                 }}>{m.text}</div>
                 {m.article&&(
-                  <div className="card-sm" style={{maxWidth:'85%',overflow:'hidden'}}>
-                    {m.article.imageUrl&&<img src={m.article.imageUrl} alt="" style={{width:'100%',height:130,objectFit:'cover',display:'block'}} onError={e=>e.target.style.display='none'}/>}
-                    <div style={{padding:12}}>
-                      {m.article.isBreaking&&<span className="badge" style={{background:'rgba(239,68,68,.15)',color:'#ef4444',border:'1px solid rgba(239,68,68,.3)',marginBottom:6,display:'inline-flex',gap:4}}>⚡ BREAKING</span>}
-                      <p style={{fontWeight:700,fontSize:13,lineHeight:1.4,marginBottom:4}}>{m.article.title}</p>
-                      <p style={{fontSize:11,color:'var(--muted)',lineHeight:1.5}}>{(m.article.summary||'').slice(0,130)}...</p>
-                      <button className="btn btn-accent" style={{width:'100%',marginTop:10,fontSize:12,padding:'8px'}} onClick={()=>saveChatDraft(m.article)}>💾 Save as Draft</button>
-                      <button className="btn btn-ghost" style={{width:'100%',marginTop:6,fontSize:12,padding:'8px'}} onClick={()=>genVideo(m.article)}>🎬 Generate Video</button>
+                  <div className="card-sm fade-up" style={{maxWidth:'90%',overflow:'hidden'}}>
+                    {/* Article image */}
+                    {m.article.imageUrl&&(
+                      <div style={{position:'relative'}}>
+                        <img src={m.article.imageUrl} alt="" style={{width:'100%',height:160,objectFit:'cover',display:'block'}} onError={e=>e.target.style.display='none'}/>
+                        {m.article.isBreaking&&<span className="badge" style={{position:'absolute',top:8,left:8,background:'#ef4444',color:'#fff',fontSize:10,padding:'3px 8px'}}>⚡ BREAKING</span>}
+                        <span className="badge" style={{position:'absolute',top:8,right:8,background:'rgba(99,102,241,.9)',color:'#fff',fontSize:9}}>AI</span>
+                      </div>
+                    )}
+                    <div style={{padding:14}}>
+                      {/* Category + readtime */}
+                      <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+                        <span style={{fontSize:10,color:'var(--accent)',fontWeight:700}}>{CATEGORIES.find(c=>c.value===m.article.category)?.label||'News'}</span>
+                        <span style={{fontSize:10,color:'var(--dim)'}}>· {m.article.readTime||'3 min read'}</span>
+                        <span style={{fontSize:10,color:'var(--dim)'}}>· {m.article.source||'KWT News'}</span>
+                      </div>
+                      <p style={{fontWeight:800,fontSize:14,lineHeight:1.4,marginBottom:6}}>{m.article.title}</p>
+                      <p style={{fontSize:12,color:'var(--muted)',lineHeight:1.55,marginBottom:10}}>{m.article.summary}</p>
+                      {/* Action buttons */}
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                        <button className="btn btn-accent" style={{fontSize:12,padding:'9px 6px'}} onClick={()=>saveChatDraft(m.article)}>
+                          💾 Save Draft
+                        </button>
+                        <button className="btn btn-ghost" style={{fontSize:12,padding:'9px 6px'}} onClick={()=>genVideo(m.article)}>
+                          🎬 Make Video
+                        </button>
+                      </div>
                     </div>
+                    {/* Inline video player - shows when video is ready for this article */}
+                    {videoResult&&videoResult.articleTitle===m.article.title&&(
+                      <div style={{borderTop:'1px solid var(--border)',padding:12,background:'rgba(245,166,35,.04)'}}>
+                        <p style={{fontSize:11,fontWeight:700,color:'var(--accent)',marginBottom:8}}>🎬 Video Ready!</p>
+                        <video src={videoResult.url} controls style={{width:'100%',borderRadius:8,background:'#000',maxHeight:180}} playsInline/>
+                        <button className="btn btn-accent" onClick={downloadVideo} style={{width:'100%',marginTop:8,fontSize:12,padding:'8px'}}>
+                          ⬇️ Download Video (.webm)
+                        </button>
+                      </div>
+                    )}
+                    {/* Video progress for this article */}
+                    {videoBusy&&videoResult===null&&(
+                      <div style={{borderTop:'1px solid var(--border)',padding:12}}>
+                        <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                          <span style={{fontSize:11,color:'var(--muted)'}}>🎬 Rendering video...</span>
+                          <span style={{fontSize:11,color:'var(--accent)',fontWeight:700}}>{videoProgress}%</span>
+                        </div>
+                        <div style={{height:4,borderRadius:2,background:'var(--surface2)',overflow:'hidden'}}>
+                          <div style={{height:'100%',width:videoProgress+'%',background:'var(--accent)',transition:'width .3s',borderRadius:2}}></div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2488,10 +2658,13 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
                         <div style={{height:'100%',width:videoProgress+'%',background:'var(--accent)',transition:'width .3s',borderRadius:3}}></div>
                       </div>
                     </div>
-                  ) : videoResult?.article===preview ? (
-                    <button className="btn btn-accent" onClick={downloadVideo} style={{width:'100%',fontSize:13,padding:'10px'}}>
-                      ⬇️ Download Video (.webm)
-                    </button>
+                  ) : videoResult?.articleTitle===preview?.title ? (
+                    <>
+                      <video src={videoResult.url} controls playsInline style={{width:'100%',borderRadius:10,background:'#000',maxHeight:200,marginBottom:8}}/>
+                      <button className="btn btn-accent" onClick={downloadVideo} style={{width:'100%',fontSize:13,padding:'10px'}}>
+                        ⬇️ Download Video (.webm)
+                      </button>
+                    </>
                   ) : (
                     <button className="btn btn-ghost" onClick={()=>genVideo(preview)} style={{width:'100%',fontSize:13,padding:'10px'}}>
                       🎬 Generate {videoDur}s News Video
