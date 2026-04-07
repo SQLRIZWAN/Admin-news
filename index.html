@@ -203,9 +203,20 @@ const callAI = async (userPrompt) => {
 const callGemini = callAI;
 
 const parseJsonFromText = text => {
-  try{ return JSON.parse(text); }catch(e){}
-  const m = text.match(/```json\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
-  if(m){ try{ return JSON.parse(m[1]||m[0]); }catch(e){} }
+  if(!text) return null;
+  // 1. Direct parse
+  try{ return JSON.parse(text.trim()); }catch(e){}
+  // 2. Strip markdown fences
+  const stripped = text.replace(/```(?:json)?\s*/gi,'').replace(/```/g,'').trim();
+  try{ return JSON.parse(stripped); }catch(e){}
+  // 3. Brace-matching: find first { and walk to its matching }
+  const start = text.indexOf('{');
+  if(start === -1) return null;
+  let depth=0;
+  for(let i=start;i<text.length;i++){
+    if(text[i]==='{') depth++;
+    else if(text[i]==='}'){depth--;if(depth===0){try{return JSON.parse(text.slice(start,i+1));}catch(e){}break;}}
+  }
   return null;
 };
 
@@ -2577,7 +2588,10 @@ Return ONLY JSON: {"reply": "your response max 300 chars", "article": null}`;
 
       const responseText=await callAI(prompt);
       const parsed=parseJsonFromText(responseText);
-      const replyText=parsed?.reply||responseText.slice(0,600);
+      // Never show raw JSON — if parse failed, show a clean fallback
+      const replyText = parsed?.reply
+        || (parsed ? 'Article generated! Click the button below to save it as a video draft.'
+            : responseText.replace(/^\s*\{[\s\S]*\}\s*$/,'').trim().slice(0,400) || '✅ Article ready! Click "Generate Video & Save Draft" below.');
       const article=parsed?.article||null;
       setMsgs(p=>[...p,{role:'ai',text:replyText,article}]);
     }catch(e){
