@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
 <title>KWT News — Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
@@ -776,8 +776,8 @@ const LogoPicker = ({value, onSelect}) => {
 
       {/* Modal */}
       {open&&(
-        <div className="modal-bg scale-in" onClick={()=>setOpen(false)}>
-          <div className="modal" style={{height:'82vh',display:'flex',flexDirection:'column',overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',zIndex:200,display:'flex',alignItems:'flex-end',justifyContent:'center'}} onClick={()=>setOpen(false)}>
+          <div style={{width:'100%',maxWidth:580,height:'88vh',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'20px 20px 0 0',display:'flex',flexDirection:'column',overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
             {/* Header */}
             <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <p style={{fontWeight:800,fontSize:16}}>🏷 Source Logo</p>
@@ -880,7 +880,7 @@ const NewsForm = ({editing, initialForm, onSave, onCancel, toast}) => {
   };
 
   return (
-    <div className="fade-up" style={{maxWidth:860,margin:'0 auto'}}>
+    <div className="fade-up" style={{maxWidth:860,margin:'0 auto',overflowX:'hidden'}}>
 
       {/* ── Top Bar ── */}
       <div style={{marginBottom:24}}>
@@ -2261,18 +2261,20 @@ const AINewsManager = ({toast}) => {
   };
 
   const saveDraft = async(article)=>{
+    const isVideo = !!(article.videoUrl);
     await db.collection('news').add({
       title:article.title||'',
       summary:article.summary||'',
       content:article.content||'',
-      imageUrl:article.imageUrl||'',
+      imageUrl:isVideo ? '' : (article.imageUrl||''),
+      videoUrl:isVideo ? article.videoUrl : '',
       thumbnail:'',
       category:article.category||'world',
       source:article.source||'KWT News AI',
       sourceLogo:'',
       readTime:article.readTime||'3 min read',
       isBreaking:article.isBreaking||false,
-      mediaType:'image',
+      mediaType:isVideo ? 'video' : 'image',
       hidden:true,
       aiGenerated:true,
       timestamp:firebase.firestore.FieldValue.serverTimestamp(),
@@ -2327,10 +2329,16 @@ Return ONLY JSON: {"reply": "your response max 300 chars", "article": null}`;
 
   const saveChatDraft = async(article)=>{
     try{
-      toast.add('Fetching image...','info');
-      const imageUrl=await getImg(article.imageQuery||article.title,imgSrc==='ai');
-      await saveDraft({...article,imageUrl});
-      toast.add('Draft saved! Check the Drafts tab.','ok');
+      // If a video was already generated for this article, save it with video
+      if(videoResult && videoResult.articleTitle===article.title){
+        await saveDraft({...article, videoUrl: videoResult.url});
+        toast.add('Draft saved with video! Check Drafts tab.','ok');
+      } else {
+        toast.add('Fetching image...','info');
+        const imageUrl=await getImg(article.imageQuery||article.title,imgSrc==='ai');
+        await saveDraft({...article, imageUrl});
+        toast.add('Draft saved! Check the Drafts tab.','ok');
+      }
       setMsgs(p=>[...p,{role:'ai',text:'✅ Draft saved! Go to the Drafts tab to review, edit and publish it.'}]);
     }catch(e){ toast.add('Save failed: '+e.message,'error'); }
   };
@@ -2943,7 +2951,7 @@ const Layout = ({user,onLogout}) => {
         <style>{`@media(max-width:767px){#mob-menu{display:inline-flex!important}}`}</style>
 
         {/* Page content */}
-        <div style={{padding:'20px 16px 24px',maxWidth:900,margin:'0 auto'}}>
+        <div style={{padding:'20px 16px 24px',maxWidth:900,margin:'0 auto',overflowX:'hidden'}}>
           {renderPage()}
         </div>
       </div>
