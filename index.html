@@ -2279,12 +2279,16 @@ const makeNewsVideoWithVoice = async (article, durSecs=22) => {
     const ttsUrl='https://text.pollinations.ai/'+encodeURIComponent(script)+'?model=openai-audio&voice=nova&seed=42';
     const resp = await Promise.race([
       fetch(ttsUrl),
-      new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),14000))
+      new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),22000))
     ]);
     if(resp.ok){
       const buf=await resp.arrayBuffer();
       audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-      const decoded=await audioCtx.decodeAudioData(buf.slice(0));
+      // decodeAudioData: use callback form for older Android Chrome compatibility
+      const decoded=await new Promise((res,rej)=>{
+        const p=audioCtx.decodeAudioData(buf.slice(0),res,rej);
+        if(p&&p.then) p.then(res).catch(rej);
+      });
       voiceDur=decoded.duration;
       if(voiceDur+4>durSecs) durSecs=Math.ceil(voiceDur)+4;
       const dest=audioCtx.createMediaStreamDestination();
@@ -2632,13 +2636,14 @@ Return ONLY JSON: {"reply": "your response max 300 chars", "article": null}`;
         sourceLogo: fullArticle.sourceLogo||'',
         imageUrl: fullArticle.imageUrl||'',
         videoUrl: '',
+        thumbnail: '',
         mediaType: 'video',
         readTime: fullArticle.readTime||'3 min read',
         isBreaking: fullArticle.isBreaking||false,
         hidden: true,
         aiGenerated: true,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        views:0, likes:0, commentCount:0,
       }); }catch(e2){ throw new Error('Draft save failed: '+e2.message); }
 
       // 4. Render video with voice-over
@@ -2661,7 +2666,7 @@ Return ONLY JSON: {"reply": "your response max 300 chars", "article": null}`;
         setVideoProgress(100);
 
         // 6. Update draft with videoUrl
-        await db.collection('news').doc(docRef.id).update({videoUrl, mediaType:'video', updatedAt: firebase.firestore.FieldValue.serverTimestamp()});
+        await db.collection('news').doc(docRef.id).update({videoUrl, mediaType:'video'});
         setVideoStatus(''); setVideoBusy(false);
         toast.add('✅ Video draft saved with voice & logo!','ok');
         setMsgs(p=>[...p,{role:'ai',text:'✅ Video draft saved! Go to the Drafts tab to review and publish.'}]);
