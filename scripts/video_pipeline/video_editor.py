@@ -227,11 +227,17 @@ def create_video(
     )
 
     # Cleanup
-    audio.close()
-    base.close()
-    for c in clips_used := [base]:
+    try:
+        audio.close()
+    except Exception:
+        pass
+    try:
+        base.close()
+    except Exception:
+        pass
+    for sub in subtitle_clips:
         try:
-            c.close()
+            sub.close()
         except Exception:
             pass
 
