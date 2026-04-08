@@ -4,6 +4,7 @@ const GEMINI_BASE = 'https://generativelanguage.googleapis.com/';
 
 const MODELS = [
   { m: 'gemini-2.5-flash',               v: 'v1beta', search: true  },
+  { m: 'gemini-2.5-flash-preview-05-20', v: 'v1beta', search: true  },
   { m: 'gemini-2.0-flash',               v: 'v1beta', search: true  },
   { m: 'gemini-2.0-flash-lite',          v: 'v1beta', search: true  },
   { m: 'gemini-1.5-flash-latest',        v: 'v1beta', search: false },

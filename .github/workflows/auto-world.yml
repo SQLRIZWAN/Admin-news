@@ -3,36 +3,27 @@ name: 🌍 Auto News — World
 on:
   schedule:
     # Every 2 hours — 12 posts per day
-    # Starting 07:00 Kuwait (04:00 UTC), covers all major news slots
+    # 07:00 Kuwait = 04:00 UTC, then every 2 hours
     - cron: '0 4,6,8,10,12,14,16,18,20,22,0,2 * * *'
   workflow_dispatch:
 
 jobs:
-  generate-video:
-    name: Generate & Post World News Video
+  post-news:
+    name: World News Video
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: scripts/video_pipeline/requirements.txt
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q ffmpeg fonts-dejavu-core fonts-liberation
-
-      - name: Install Python dependencies
+      - name: Install system deps
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg fonts-dejavu-core fonts-liberation
+      - name: Install Python deps
         run: pip install -r scripts/video_pipeline/requirements.txt
-
-      - name: Run pipeline — World
+      - name: Run pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}

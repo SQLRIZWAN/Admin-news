@@ -1,0 +1,51 @@
+name: 🧪 Test — Pipeline Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      category:
+        description: 'Category to test'
+        required: true
+        default: 'world'
+        type: choice
+        options:
+          - kuwait
+          - world
+          - kuwait-jobs
+          - kuwait-offers
+          - funny-news-meme
+
+jobs:
+  test-pipeline:
+    name: Test News Pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: scripts/video_pipeline/requirements.txt
+
+      - name: Install system deps (FFmpeg + fonts)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg fonts-dejavu-core fonts-liberation
+
+      - name: Install Python deps
+        run: pip install -r scripts/video_pipeline/requirements.txt
+
+      - name: Run pipeline
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          echo "▶ Running pipeline for category: ${{ inputs.category }}"
+          python scripts/video_pipeline/main.py --category=${{ inputs.category }}
