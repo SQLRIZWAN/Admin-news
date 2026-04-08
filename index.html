@@ -1904,6 +1904,159 @@ const PushNotifs = ({toast}) => {
   );
 };
 
+// ── AUTOMATION ────────────────────────────────────────────────
+const AutomationPage = ({toast}) => {
+  const CATS = [
+    {id:'kuwait',         label:'🇰🇼 Kuwait',        color:'#34d399', schedule:'2× daily (6:00 AM & 6:00 PM KWT)'},
+    {id:'world',          label:'🌍 World',           color:'#60a5fa', schedule:'Every 2 hrs (12×/day)'},
+    {id:'kuwait-jobs',    label:'💼 Kuwait Jobs',     color:'#a78bfa', schedule:'Every 2 days (9:00 AM KWT)'},
+    {id:'kuwait-offers',  label:'🛍️ Kuwait Offers',  color:'#f472b6', schedule:'Daily (10:00 AM KWT)'},
+    {id:'funny-news-meme',label:'😂 Funny & Memes',  color:'#fbbf24', schedule:'Daily (8:00 PM KWT)'},
+  ];
+
+  const [configs, setConfigs] = useState({});
+  const [logs, setLogs] = useState([]);
+
+  useEffect(()=>{
+    const unsubs = [];
+    // Listen to each category config
+    CATS.forEach(c=>{
+      unsubs.push(
+        db.collection('automation_config').doc(c.id).onSnapshot(snap=>{
+          setConfigs(prev=>({...prev, [c.id]: snap.exists ? snap.data() : {enabled:true}}));
+        })
+      );
+    });
+    // Listen to recent logs
+    unsubs.push(
+      db.collection('automation_logs')
+        .orderBy('timestamp','desc')
+        .limit(30)
+        .onSnapshot(snap=>{
+          setLogs(snap.docs.map(d=>({id:d.id,...d.data()})));
+        })
+    );
+    return ()=>unsubs.forEach(u=>u());
+  },[]);
+
+  const toggleCat = async (catId, currentEnabled) => {
+    try {
+      await db.collection('automation_config').doc(catId).set(
+        {enabled: !currentEnabled},
+        {merge:true}
+      );
+      toast.show(!currentEnabled ? '✅ Automation enabled' : '⏸️ Automation paused', 'success');
+    } catch(e) {
+      toast.show('Update failed: '+e.message,'error');
+    }
+  };
+
+  const timeAgo = ts => {
+    if(!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const diff = (Date.now()-d)/1000;
+    if(diff<60) return 'Just now';
+    if(diff<3600) return Math.floor(diff/60)+'m ago';
+    if(diff<86400) return Math.floor(diff/3600)+'h ago';
+    return Math.floor(diff/86400)+'d ago';
+  };
+
+  const statusBadge = s => {
+    const map = {
+      posted:  {bg:'rgba(52,211,153,.15)',  color:'#34d399', text:'Posted'},
+      skipped: {bg:'rgba(251,191,36,.15)',   color:'#fbbf24', text:'Skipped'},
+      error:   {bg:'rgba(248,113,113,.15)',  color:'#f87171', text:'Error'},
+    };
+    const m = map[s] || {bg:'rgba(136,153,180,.15)', color:'#8899b4', text:s||'—'};
+    return <span className="badge" style={{background:m.bg, color:m.color, fontSize:10}}>{m.text}</span>;
+  };
+
+  return (
+    <div className="fade-up">
+      {/* Header */}
+      <div style={{marginBottom:20}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+          <div style={{width:36,height:36,borderRadius:11,background:'linear-gradient(135deg,#1a2d4a,#243a59)',border:'1px solid var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <Ic n="bot" s={18} c="var(--accent)"/>
+          </div>
+          <div>
+            <h1 style={{fontFamily:'Outfit',fontSize:22,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>Automation</h1>
+            <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>RSS → Gemini → Edge-TTS → Video → Firebase</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Info banner */}
+      <div style={{background:'rgba(245,166,35,.08)',border:'1px solid rgba(245,166,35,.2)',borderRadius:12,padding:'12px 16px',marginBottom:20,fontSize:12,color:'var(--muted)',lineHeight:1.6}}>
+        <strong style={{color:'var(--accent)'}}>🤖 How it works:</strong>{' '}
+        GitHub Actions runs each category on schedule → Fetches live RSS news → Gemini writes a 30-sec script →
+        Edge-TTS narrates it → Pexels/Pixabay video clips → MoviePy edits the final video → Posts to Firebase automatically.
+        <br/>
+        <span style={{color:'var(--dim)',fontSize:11}}>Manage schedules in GitHub → Actions tab → Run workflow manually anytime.</span>
+      </div>
+
+      {/* Category cards */}
+      <div style={{display:'flex',flexDirection:'column',gap:12,marginBottom:24}}>
+        {CATS.map(cat=>{
+          const cfg = configs[cat.id] || {};
+          const enabled = cfg.enabled !== false;
+          const status = cfg.lastStatus || '—';
+          const lastRun = timeAgo(cfg.lastRun);
+          return (
+            <div key={cat.id} className="card-sm" style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:14}}>
+              {/* Color dot */}
+              <div style={{width:10,height:10,borderRadius:'50%',background:cat.color,flexShrink:0,boxShadow:`0 0 8px ${cat.color}55`}}/>
+              {/* Info */}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{fontWeight:700,fontSize:14}}>{cat.label}</span>
+                  {statusBadge(status)}
+                </div>
+                <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                  <span style={{fontSize:11,color:'var(--dim)'}}>🕐 {cat.schedule}</span>
+                  <span style={{fontSize:11,color:'var(--muted)'}}>Last run: {lastRun}</span>
+                </div>
+              </div>
+              {/* Toggle */}
+              <button
+                className="tog"
+                style={{background:enabled?'var(--success)':'var(--dim)'}}
+                onClick={()=>toggleCat(cat.id, enabled)}
+              >
+                <div className="tog-thumb" style={{left:enabled?22:4}}/>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Recent logs */}
+      <div className="card" style={{padding:20}}>
+        <p style={{fontWeight:700,fontSize:14,marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+          <Ic n="refresh" s={15} c="var(--muted)"/> Recent Activity
+          <span style={{marginLeft:'auto',fontSize:11,color:'var(--dim)',fontWeight:400}}>{logs.length} entries</span>
+        </p>
+        {logs.length===0 ? (
+          <p style={{fontSize:13,color:'var(--dim)',textAlign:'center',padding:'20px 0'}}>No automation runs yet. Workflows will run on schedule via GitHub Actions.</p>
+        ) : (
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {logs.map(log=>(
+              <div key={log.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--surface2)',borderRadius:10,border:'1px solid var(--border)'}}>
+                {statusBadge(log.status)}
+                <span style={{fontSize:12,fontWeight:600,minWidth:100}}>{
+                  CATS.find(c=>c.id===log.category)?.label || log.category
+                }</span>
+                <span style={{fontSize:11,color:'var(--muted)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{log.reason||'—'}</span>
+                <span style={{fontSize:10,color:'var(--dim)',flexShrink:0}}>{timeAgo(log.timestamp)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── SETTINGS ──────────────────────────────────────────────────
 const SettingsPage = ({user,toast}) => (
   <div className="fade-up">
@@ -3147,6 +3300,7 @@ const PAGES = [
   {id:'dashboard',label:'Home',icon:'grid'},
   {id:'news',label:'News',icon:'news'},
   {id:'ai',label:'AI',icon:'sparkle'},
+  {id:'automation',label:'Auto',icon:'bot'},
   {id:'categories',label:'Categories',icon:'tag'},
   {id:'ads',label:'Ads',icon:'ads'},
   {id:'users',label:'Users',icon:'users'},
@@ -3182,6 +3336,7 @@ const Layout = ({user,onLogout}) => {
       case 'comments': return <CommentsManager {...p}/>;
       case 'users': return <UsersManager {...p}/>;
       case 'notifications': return <PushNotifs {...p}/>;
+      case 'automation': return <AutomationPage {...p}/>;
       case 'settings': return <SettingsPage user={user} {...p}/>;
       default: return <Dashboard/>;
     }

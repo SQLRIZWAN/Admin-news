@@ -1,0 +1,6 @@
+firebase-admin>=6.5.0
+requests>=2.31.0
+feedparser>=6.0.11
+edge-tts>=6.1.9
+moviepy>=1.0.3
+Pillow>=10.0.0

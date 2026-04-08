@@ -1,0 +1,40 @@
+name: 🛍️ Auto News — Kuwait Offers
+
+on:
+  schedule:
+    # Once daily at 10:00 Kuwait time (07:00 UTC)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  generate-video:
+    name: Generate & Post Kuwait Offers Video
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: scripts/video_pipeline/requirements.txt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg fonts-dejavu-core fonts-liberation
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/video_pipeline/requirements.txt
+
+      - name: Run pipeline — Kuwait Offers
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: python scripts/video_pipeline/main.py --category=kuwait-offers
