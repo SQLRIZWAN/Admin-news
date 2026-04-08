@@ -1,0 +1,17 @@
+{
+  "name": "kwt-news-scheduler",
+  "version": "1.0.0",
+  "description": "Automated news posting scheduler for KWT News",
+  "type": "module",
+  "main": "post-news.js",
+  "scripts": {
+    "post": "node post-news.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
