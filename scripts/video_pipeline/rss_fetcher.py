@@ -124,10 +124,17 @@ def get_latest_news(rss_feeds: list, filter_keywords: list = None) -> dict | Non
             print(f"   RSS error ({feed_url[:50]}): {e}")
             continue
 
-    # No keyword-matching entry found — use unfiltered fallback so Gemini can handle it
+    # When category keywords were specified but NOTHING matched:
+    # Return None so Gemini generates the correct category content from scratch.
+    # Returning a wrong-category RSS article causes duplicate cross-category news
+    # (e.g., both Kuwait-Jobs and Kuwait-Offers get the same BBC Business article).
+    if filter_keywords:
+        print(f"   ⚠️  No category-matching RSS entry — Gemini will generate from scratch")
+        return None
+
+    # No filter specified — use first valid entry as context
     if best_unfiltered:
-        print(f"   ⚠️  No keyword match in RSS — using first valid entry as context for Gemini")
-        print(f"      Entry: {best_unfiltered['title'][:60]}")
+        print(f"   ⚠️  No usable RSS entry — using first valid: {best_unfiltered['title'][:60]}")
         return best_unfiltered
 
     print("   ⚠️  All RSS feeds returned no usable items")

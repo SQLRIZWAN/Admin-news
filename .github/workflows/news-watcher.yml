@@ -1,0 +1,44 @@
+name: 🚨 Breaking News Watcher
+
+# Runs every 30 minutes — checks for major breaking news in World + Kuwait.
+# Posts IMMEDIATELY if a high-importance event is found (bypasses normal schedule).
+# The pipeline's duplicate check prevents re-posting already-published stories.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # Every 30 minutes, 24/7
+  workflow_dispatch:          # Allow manual trigger
+
+jobs:
+  watch:
+    name: "🚨 ${{ matrix.category }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      matrix:
+        category: [world, kuwait]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: scripts/video_pipeline/requirements.txt
+
+      - name: Install system deps
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg fonts-dejavu-core fonts-liberation
+
+      - name: Install Python deps
+        run: pip install -r scripts/video_pipeline/requirements.txt
+
+      - name: Run breaking news check
+        env:
+          GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY:           ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY:          ${{ secrets.PIXABAY_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          BREAKING_NEWS_MODE:       'true'
+        run: python scripts/video_pipeline/main.py --category=${{ matrix.category }} --breaking-only

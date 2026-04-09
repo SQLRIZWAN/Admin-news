@@ -9,6 +9,7 @@ Firebase Admin SDK helpers:
 import os
 import re
 import json
+import requests
 from datetime import datetime, timezone, timedelta
 
 import firebase_admin
@@ -121,10 +122,59 @@ def check_duplicate(new_title: str, existing: list, threshold: float = 0.45) -> 
 
 # ── Logos ────────────────────────────────────────────────────────────────────
 
+def _domain_from_source(source_name: str) -> str:
+    """Guess a domain from a source name (e.g. 'BBC News' → 'bbc.com')."""
+    _MAP = {
+        'bbc': 'bbc.com', 'aljazeera': 'aljazeera.com', 'al jazeera': 'aljazeera.com',
+        'reuters': 'reuters.com', 'nytimes': 'nytimes.com', 'new york times': 'nytimes.com',
+        'cnn': 'cnn.com', 'guardian': 'theguardian.com', 'ap news': 'apnews.com',
+        'arab times': 'arabtimesonline.com', 'kuwait times': 'kuwaittimes.com',
+        'kuna': 'kuna.net.kw', 'gulf news': 'gulfnews.com', 'bayt': 'bayt.com',
+        'gulftalent': 'gulftalent.com', 'the onion': 'theonion.com',
+    }
+    s = source_name.lower()
+    for key, domain in _MAP.items():
+        if key in s:
+            return domain
+    # Fallback: convert "BBC News" → "bbcnews.com"  (rough guess)
+    slug = re.sub(r'[^a-z0-9]', '', s.split()[0])
+    return f"{slug}.com" if slug else ''
+
+
+def _fetch_clearbit_logo(source_name: str) -> str:
+    """Try Clearbit logo API for the source domain. Returns URL if accessible."""
+    domain = _domain_from_source(source_name)
+    if not domain:
+        return ''
+    url = f"https://logo.clearbit.com/{domain}"
+    try:
+        r = requests.get(url, timeout=8)
+        if r.status_code == 200 and len(r.content) > 500:
+            return url
+    except Exception:
+        pass
+    return ''
+
+
+def _save_logo_to_collection(source_name: str, logo_url: str) -> None:
+    """Save a discovered logo to the Firestore logos collection for future use."""
+    try:
+        db = _get_db()
+        db.collection('logos').add({
+            'name': source_name,
+            'url': logo_url,
+            'autoAdded': True,
+            'createdAt': firestore.SERVER_TIMESTAMP,
+        })
+        print(f"   ✅ Auto-saved logo for '{source_name}' to collection")
+    except Exception as e:
+        print(f"   Logo save error: {e}")
+
+
 def get_source_logo(source_name: str) -> str:
     """
     Look up the source logo URL from the Firestore 'logos' collection.
-    Does a case-insensitive partial-name match.
+    If not found, tries Clearbit logo API and saves result to collection.
     Returns logo URL string or empty string if not found.
     """
     if not source_name:
@@ -139,7 +189,17 @@ def get_source_logo(source_name: str) -> str:
             if logo_name and (logo_name in name_lower or name_lower in logo_name):
                 return data.get('url', '')
     except Exception as e:
-        print(f"   Logo lookup error: {e}")
+        print(f"   Logo collection error: {e}")
+
+    # Not in collection — try auto-fetch from Clearbit
+    print(f"   🔍 Logo not in collection, trying Clearbit for '{source_name}'...")
+    clearbit_url = _fetch_clearbit_logo(source_name)
+    if clearbit_url:
+        print(f"   ✅ Clearbit logo found: {clearbit_url}")
+        _save_logo_to_collection(source_name, clearbit_url)
+        return clearbit_url
+
+    print(f"   — No logo found for '{source_name}'")
     return ''
 
 

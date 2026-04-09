@@ -208,7 +208,18 @@ def main():
         choices=list(CATEGORIES.keys()),
         help='News category to process',
     )
+    parser.add_argument(
+        '--breaking-only',
+        action='store_true',
+        default=False,
+        help='Breaking news watcher mode: only post if truly high-importance news found',
+    )
     args = parser.parse_args()
+
+    # In breaking-only mode, use a shorter duplicate window (6 hours instead of 3 days)
+    # and only post if something genuinely new is happening
+    if args.breaking_only:
+        print("🚨  BREAKING NEWS WATCHER MODE — only high-importance events will be posted")
 
     try:
         posted = run(args.category)

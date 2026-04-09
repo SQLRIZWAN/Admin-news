@@ -1105,7 +1105,6 @@ const NewsManager = ({toast, initCat='all'}) => {
   const [confirm,setConfirm] = useState(null);
   const [search,setSearch] = useState('');
   const [cat,setCat] = useState(initCat);
-  const [visFilter,setVisFilter] = useState('visible');
 
   useEffect(()=>{
     const u=db.collection('news').orderBy('timestamp','desc').limit(50).onSnapshot(s=>{
@@ -1138,9 +1137,8 @@ const NewsManager = ({toast, initCat='all'}) => {
     const q=search.toLowerCase();
     const matchQ=!q||n.title?.toLowerCase().includes(q);
     const matchC=cat==='all'||n.category===cat;
-    const matchV=visFilter==='all'||(visFilter==='hidden'?n.hidden===true:!n.hidden);
-    return matchQ&&matchC&&matchV;
-  }),[news,search,cat,visFilter]);
+    return matchQ&&matchC;
+  }),[news,search,cat]);
 
   // ── Full-screen form view ──
   if(view==='form') return (
@@ -1163,7 +1161,7 @@ const NewsManager = ({toast, initCat='all'}) => {
         <div>
           <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>News</h1>
           <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>
-            {news.filter(n=>!n.hidden).length} visible · {news.filter(n=>n.hidden).length} hidden · {news.filter(n=>n.isBreaking).length} breaking
+            {news.length} articles · {news.filter(n=>n.isBreaking).length} breaking
           </p>
         </div>
         <button className="btn btn-accent" style={{padding:'11px 20px',gap:8,fontSize:14}} onClick={openAdd}>
@@ -1194,24 +1192,6 @@ const NewsManager = ({toast, initCat='all'}) => {
           ))}
         </div>
 
-        {/* Visibility filter */}
-        <div style={{display:'flex',gap:8,overflowX:'auto',paddingBottom:2}}>
-          {[
-            {v:'visible',label:'👁 Visible',cnt:news.filter(n=>!n.hidden).length},
-            {v:'hidden', label:'🚫 Hidden', cnt:news.filter(n=>n.hidden).length},
-            {v:'all',    label:'All',       cnt:news.length},
-          ].map(({v,label,cnt})=>(
-            <button key={v} onClick={()=>setVisFilter(v)}
-              style={{padding:'7px 14px',borderRadius:8,fontSize:12,fontWeight:600,border:'1px solid',cursor:'pointer',
-                transition:'all .15s',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:6,
-                background:visFilter===v?(v==='hidden'?'rgba(248,113,113,.15)':'var(--accent)'):'transparent',
-                color:visFilter===v?(v==='hidden'?'var(--danger)':'#050c18'):'var(--muted)',
-                borderColor:visFilter===v?(v==='hidden'?'var(--danger)':'var(--accent)'):'var(--border)'}}>
-              {label}
-              <span style={{background:'rgba(255,255,255,.15)',borderRadius:999,padding:'0px 7px',fontSize:10,fontWeight:800}}>{cnt}</span>
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Articles List */}
@@ -1275,12 +1255,6 @@ const NewsManager = ({toast, initCat='all'}) => {
                 style={{background:n.isBreaking?'var(--danger)':'var(--border2)'}}
                 onClick={()=>toggleBreaking(n.id,n.isBreaking)}>
                 <div className="tog-thumb" style={{left:n.isBreaking?'22px':'4px'}}></div>
-              </button>
-              {/* Hide/Show */}
-              <button className="btn btn-icon" title={n.hidden?'Make Visible':'Hide'}
-                style={{background:n.hidden?'rgba(245,166,35,.12)':'var(--surface2)',borderColor:n.hidden?'rgba(245,166,35,.35)':'var(--border)',color:n.hidden?'var(--accent)':'var(--muted)'}}
-                onClick={()=>toggleHidden(n.id,!!n.hidden)}>
-                <Ic n={n.hidden?'eye':'eyeoff'} s={14}/>
               </button>
               {/* Edit */}
               <button className="btn btn-icon" title="Edit Article" onClick={()=>openEdit(n)}>
