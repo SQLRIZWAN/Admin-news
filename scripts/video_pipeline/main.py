@@ -86,13 +86,13 @@ def run(category: str) -> bool:
             return False
         print(f"      ✅ Not a duplicate (checked {len(recent)} recent articles)")
 
-    # ── 4. Generate script via Gemini ────────────────────────────────────────
-    print("\n🤖  Step 3 — Generating script (Gemini AI)...")
+    # ── 4. Generate script (AI + fallback) ──────────────────────────────────────
+    print("\n🤖  Step 3 — Generating script (Gemini AI → RSS fallback)...")
     script_data = generate_script(news_item, category, cfg)
 
     if not script_data or script_data.get('skip'):
-        print("      Gemini found no relevant news — skipping.")
-        write_automation_log(category, 'skipped', reason='no relevant news found (Gemini skip)')
+        print("      No news found from any source — skipping this run.")
+        write_automation_log(category, 'skipped', reason='no news from RSS or AI')
         return False
 
     words = len(script_data['script'].split())
