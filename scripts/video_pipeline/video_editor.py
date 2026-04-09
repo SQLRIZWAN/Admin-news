@@ -8,6 +8,12 @@ import numpy as np
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
+# ── Pillow 10+ compatibility ──────────────────────────────────────────────────
+# MoviePy 1.0.3 uses PIL.Image.ANTIALIAS internally; it was removed in Pillow 10.
+# Monkey-patch it back so MoviePy doesn't crash on resize.
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.LANCZOS  # LANCZOS is the modern equivalent
+
 from tts import group_subtitles
 
 VIDEO_SIZE = (1280, 720)
@@ -187,7 +193,9 @@ def create_video(
 
     # --- Audio ---
     audio = AudioFileClip(audio_path)
-    total_duration = audio.duration + 1.0   # 1s buffer at end
+    # Use exact audio duration — adding a buffer causes MoviePy to read
+    # beyond the audio file end and crash with "Accessing time t=X > clip duration"
+    total_duration = audio.duration
 
     print(f"   Audio duration: {audio.duration:.1f}s → video: {total_duration:.1f}s")
 
