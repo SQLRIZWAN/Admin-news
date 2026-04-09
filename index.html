@@ -2081,113 +2081,130 @@ const AutomationPage = ({toast}) => {
   };
 
   // ── Render ───────────────────────────────────────────────────
+  const hasToken = !!localStorage.getItem(LS_TOKEN);
   return (
     <div className="fade-up">
-      {/* Header */}
-      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
-        <div style={{width:38,height:38,borderRadius:12,background:'linear-gradient(135deg,#1a2d4a,#243a59)',border:'1px solid var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-          <Ic n="bot" s={19} c="var(--accent)"/>
+
+      {/* ── Header ── */}
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <div style={{width:40,height:40,borderRadius:13,background:'linear-gradient(135deg,#1a3a5c,#0f2a45)',border:'1.5px solid var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <Ic n="bot" s={20} c="var(--accent)"/>
         </div>
         <div style={{flex:1}}>
-          <h1 style={{fontSize:21,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>Automation</h1>
-          <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>RSS → AI Script → TTS → Video → Firebase  •  5 categories</p>
+          <h1 style={{fontSize:20,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>Auto News</h1>
+          <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>RSS → Script → TTS → Video → Post  •  Fully automatic</p>
         </div>
-        <button className="btn btn-accent" style={{padding:'8px 13px',fontSize:12,fontWeight:700,flexShrink:0}}
-          onClick={runAll} disabled={runningAll} title="Run all 5 categories at once on GitHub Actions">
-          {runningAll?<span className="spinner" style={{width:13,height:13}}/>:<>🚀 Run All</>}
+        <button className="btn btn-accent" style={{padding:'9px 15px',fontSize:13,fontWeight:700,flexShrink:0,gap:6,display:'flex',alignItems:'center'}}
+          onClick={runAll} disabled={runningAll}>
+          {runningAll?<><span className="spinner" style={{width:13,height:13}}/> Running…</>:<>🚀 Run All</>}
         </button>
-        <button className="btn btn-ghost" style={{padding:'7px 12px',fontSize:12}} onClick={()=>setShowSetup(v=>!v)}>
-          <Ic n="cog" s={13}/> Setup
+        <button className="btn btn-ghost" style={{padding:'9px 12px',fontSize:12,flexShrink:0}} onClick={()=>setShowSetup(v=>!v)}>
+          <Ic n="cog" s={14}/>
         </button>
       </div>
 
-      {/* GitHub token setup panel */}
+      {/* ── No token warning ── */}
+      {!hasToken&&(
+        <div onClick={()=>setShowSetup(true)} style={{cursor:'pointer',background:'rgba(245,166,35,.08)',border:'1px solid rgba(245,166,35,.3)',borderRadius:12,padding:'12px 16px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+          <Ic n="star" s={16} c="var(--accent)"/>
+          <div style={{flex:1}}>
+            <p style={{fontSize:13,fontWeight:700,color:'var(--accent)'}}>Setup Required</p>
+            <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Tap here to add GitHub Token — needed to trigger workflows manually</p>
+          </div>
+          <span style={{color:'var(--accent)',fontSize:18}}>›</span>
+        </div>
+      )}
+
+      {/* ── GitHub Setup Panel ── */}
       {showSetup&&(
-        <div className="card" style={{padding:20,marginBottom:18,border:'1px solid rgba(245,166,35,.25)'}}>
-          <p style={{fontWeight:700,fontSize:13,marginBottom:4,display:'flex',alignItems:'center',gap:8}}>
-            <Ic n="star" s={14} c="var(--accent)"/> GitHub Setup
+        <div className="card" style={{padding:18,marginBottom:16,border:'1px solid rgba(245,166,35,.3)'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+            <span style={{fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:6}}><Ic n="star" s={14} c="var(--accent)"/> GitHub Setup</span>
+            <button onClick={()=>setShowSetup(false)} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:18,lineHeight:1}}>×</button>
+          </div>
+          <p style={{fontSize:11,color:'var(--muted)',marginBottom:12,lineHeight:1.7}}>
+            <strong style={{color:'var(--text)'}}>GitHub Token</strong> (for "▶ Run" buttons):<br/>
+            Go to <strong>github.com → Settings → Developer settings → Personal access tokens (classic)</strong><br/>
+            Create token with <code style={{background:'var(--surface2)',padding:'1px 6px',borderRadius:4,fontSize:10}}>repo</code> scope.
           </p>
-          <p style={{fontSize:11,color:'var(--muted)',marginBottom:14,lineHeight:1.6}}>
-            To trigger workflows manually from this panel, enter a GitHub Personal Access Token.<br/>
-            Create at: <strong style={{color:'var(--text)'}}>GitHub → Settings → Developer settings → Personal access tokens (classic)</strong><br/>
-            Required scope: <code style={{background:'var(--surface2)',padding:'1px 5px',borderRadius:4,fontSize:10}}>repo</code> or <code style={{background:'var(--surface2)',padding:'1px 5px',borderRadius:4,fontSize:10}}>actions:write</code>
-          </p>
-          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
             <input className="inp" type="password" value={ghToken} onChange={e=>setGhToken(e.target.value)}
-              placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxx" style={{fontFamily:'DM Mono,monospace',fontSize:13}}/>
+              placeholder="ghp_xxxxxxxxxxxxxxxx  (GitHub token)" style={{fontFamily:'DM Mono,monospace',fontSize:12}}/>
             <input className="inp" value={pexelsKey} onChange={e=>setPexelsKey(e.target.value)}
-              placeholder="Pexels API key (for status check)" style={{fontSize:13}}/>
-            <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-accent" style={{flex:1,padding:'11px'}} onClick={saveSetup}>💾 Save</button>
-              <button className="btn btn-ghost" style={{padding:'11px 16px'}} onClick={()=>setShowSetup(false)}>Cancel</button>
-            </div>
+              placeholder="Pexels API key (optional, for status check)" style={{fontSize:12}}/>
+            <button className="btn btn-accent" style={{padding:'11px',fontWeight:700}} onClick={saveSetup}>💾 Save Token</button>
           </div>
         </div>
       )}
 
-      {/* API Status */}
-      <div className="card-sm" style={{padding:'14px 16px',marginBottom:18}}>
-        <div style={{display:'flex',alignItems:'center',marginBottom:12}}>
-          <span style={{fontWeight:700,fontSize:13}}>🔌 API Status</span>
-          <button className="btn btn-icon" style={{marginLeft:'auto',padding:'5px 8px'}} onClick={checkApis} disabled={refreshingApi}>
-            <Ic n="refresh" s={13} c={refreshingApi?'var(--accent)':'var(--muted)'}/>
-          </button>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 20px'}}>
-          {[
-            {key:'firebase', label:'Firebase'},
-            {key:'gemini',   label:'Puter.js AI'},
-            {key:'pixabay',  label:'Pixabay'},
-            {key:'pexels',   label:'Pexels'},
-          ].map(({key,label})=>(
-            <div key={key} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
-              padding:'8px 10px',background:'var(--surface2)',borderRadius:8,border:'1px solid var(--border)'}}>
-              <span style={{fontSize:12,color:'var(--muted)'}}>{label}</span>
-              {apiDot(apiStatus[key]||'checking')}
+      {/* ── API Status row ── */}
+      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+        {[
+          {key:'firebase',label:'Firebase',icon:'🔥'},
+          {key:'gemini',  label:'Puter.js AI',icon:'🤖'},
+          {key:'pixabay', label:'Pixabay',icon:'🖼️'},
+          {key:'pexels',  label:'Pexels',icon:'🎬'},
+        ].map(({key,label,icon})=>{
+          const s=apiStatus[key]||'checking';
+          const ok=s==='ok';const err=s==='error';const chk=s==='checking';
+          return(
+            <div key={key} style={{flex:'1 1 auto',minWidth:90,background:'var(--surface2)',border:`1px solid ${ok?'rgba(52,211,153,.3)':err?'rgba(248,113,113,.25)':'var(--border)'}`,borderRadius:10,padding:'9px 11px',textAlign:'center'}}>
+              <div style={{fontSize:16,marginBottom:3}}>{icon}</div>
+              <div style={{fontSize:10,color:'var(--muted)',marginBottom:4}}>{label}</div>
+              {apiDot(s)}
             </div>
-          ))}
-        </div>
+          );
+        })}
+        <button onClick={checkApis} disabled={refreshingApi}
+          style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:'9px 13px',cursor:'pointer',color:'var(--muted)',fontSize:12,display:'flex',alignItems:'center',gap:5}}>
+          <Ic n="refresh" s={13} c={refreshingApi?'var(--accent)':'var(--muted)'}/>
+        </button>
       </div>
 
-      {/* Category cards */}
-      <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:18}}>
+      {/* ── Category Cards ── */}
+      <p style={{fontSize:11,fontWeight:700,color:'var(--dim)',letterSpacing:'.06em',marginBottom:8}}>CATEGORIES  <span style={{fontWeight:400,color:'var(--dim)'}}>— toggle ON/OFF  •  ▶ run now</span></p>
+      <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:16}}>
         {CATS.map(cat=>{
           const cfg    = configs[cat.id]||{};
           const enabled= cfg.enabled!==false;
           const run    = ghRuns[cat.id];
           const trig   = triggering[cat.id];
+          const lastSt = cfg.lastStatus;
+          const stColor= lastSt==='posted'?'#34d399':lastSt==='error'?'#f87171':'#fbbf24';
+          const ghConcl= run?.conclusion;
           return (
-            <div key={cat.id} className="card-sm" style={{padding:'13px 15px'}}>
-              <div style={{display:'flex',alignItems:'center',gap:12}}>
-                {/* Color pill */}
-                <div style={{width:4,height:42,borderRadius:4,background:cat.color,flexShrink:0}}/>
-                {/* Info */}
+            <div key={cat.id} style={{background:'var(--surface)',border:`1.5px solid ${enabled?cat.color+'33':'var(--border)'}`,borderRadius:14,padding:'13px 14px',opacity:enabled?1:.6,transition:'all .2s'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                {/* Left color bar */}
+                <div style={{width:5,height:38,borderRadius:3,background:cat.color,flexShrink:0}}/>
+                {/* Main info */}
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
-                    <span style={{fontWeight:700,fontSize:14}}>{cat.label}</span>
-                    {logBadge(cfg.lastStatus)}
-                    {ghBadge(run)}
+                  <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                    <span style={{fontWeight:700,fontSize:14,color:'var(--text)'}}>{cat.label}</span>
+                    {lastSt&&<span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:99,background:stColor+'22',color:stColor}}>
+                      {lastSt==='posted'?'✅ Posted':lastSt==='error'?'❌ Error':'⏭️ Skipped'}
+                    </span>}
+                    {ghConcl&&<span style={{fontSize:10,padding:'2px 7px',borderRadius:99,
+                      background:ghConcl==='success'?'rgba(52,211,153,.15)':'rgba(248,113,113,.15)',
+                      color:ghConcl==='success'?'#34d399':'#f87171'}}>
+                      GH {ghConcl==='success'?'✓':'✗'}
+                    </span>}
                   </div>
-                  <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-                    <span style={{fontSize:10,color:'var(--dim)'}}>🕐 {cat.schedule}</span>
-                    <span style={{fontSize:10,color:'var(--muted)'}}>Last: {timeAgo(cfg.lastRun)}</span>
-                    {run&&<span style={{fontSize:10,color:'var(--dim)'}}>GH: {timeAgo(run.at)}</span>}
+                  <div style={{display:'flex',gap:12,marginTop:4,flexWrap:'wrap'}}>
+                    <span style={{fontSize:10,color:'var(--dim)'}}>⏰ {cat.schedule}</span>
+                    <span style={{fontSize:10,color:'var(--muted)'}}>Last run: {timeAgo(cfg.lastRun)}</span>
                   </div>
                 </div>
-                {/* Run Now button */}
-                <button
-                  className="btn btn-ghost"
-                  style={{padding:'7px 11px',fontSize:12,flexShrink:0,borderColor:'rgba(96,165,250,.3)',color:'#60a5fa'}}
-                  onClick={()=>runNow(cat)}
-                  disabled={trig}
-                  title="Trigger workflow now on GitHub"
-                >
-                  {trig?<span className="spinner" style={{width:13,height:13}}/>:<>▶ Run</>}
+                {/* Run button */}
+                <button onClick={()=>runNow(cat)} disabled={trig||!hasToken}
+                  title={hasToken?'Trigger this workflow now':'Add GitHub token in Setup first'}
+                  style={{flexShrink:0,padding:'7px 13px',borderRadius:9,border:'1.5px solid rgba(96,165,250,.4)',background:'rgba(96,165,250,.08)',color:'#60a5fa',cursor:hasToken?'pointer':'not-allowed',fontSize:12,fontWeight:700,fontFamily:'Outfit',display:'flex',alignItems:'center',gap:5,opacity:hasToken?1:.5}}>
+                  {trig?<span className="spinner" style={{width:12,height:12}}/>:<>▶ Run</>}
                 </button>
-                {/* Enable/Disable toggle */}
-                <button className="tog" style={{background:enabled?'var(--success)':'var(--dim)',flexShrink:0}}
-                  onClick={()=>toggleCat(cat.id,enabled)}>
-                  <div className="tog-thumb" style={{left:enabled?22:4}}/>
+                {/* Toggle */}
+                <button onClick={()=>toggleCat(cat.id,enabled)}
+                  style={{flexShrink:0,width:44,height:24,borderRadius:99,border:'none',cursor:'pointer',position:'relative',background:enabled?cat.color:'var(--dim)',transition:'background .2s'}}>
+                  <div style={{position:'absolute',top:3,left:enabled?22:3,width:18,height:18,borderRadius:'50%',background:'#fff',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,.3)'}}/>
                 </button>
               </div>
             </div>
@@ -2195,35 +2212,60 @@ const AutomationPage = ({toast}) => {
         })}
       </div>
 
-      {/* Refresh GH runs button */}
-      <div style={{textAlign:'center',marginBottom:18}}>
-        <button className="btn btn-ghost" style={{fontSize:12,padding:'8px 18px'}} onClick={fetchGhRuns}>
-          <Ic n="refresh" s={13}/> Refresh GitHub Status
+      {/* ── Refresh button ── */}
+      <div style={{display:'flex',gap:8,justifyContent:'center',marginBottom:16}}>
+        <button className="btn btn-ghost" style={{fontSize:12,padding:'8px 16px'}} onClick={fetchGhRuns}>
+          <Ic n="refresh" s={12}/> Refresh GitHub Status
+        </button>
+        <button className="btn btn-ghost" style={{fontSize:12,padding:'8px 16px'}} onClick={runAll} disabled={runningAll}>
+          {runningAll?'Running…':'🚀 Run All Now'}
         </button>
       </div>
 
-      {/* Recent activity log */}
-      <div className="card" style={{padding:20}}>
-        <p style={{fontWeight:700,fontSize:14,marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
-          <Ic n="refresh" s={15} c="var(--muted)"/> Recent Activity
-          <span style={{marginLeft:'auto',fontSize:11,color:'var(--dim)',fontWeight:400}}>{logs.length} runs</span>
-        </p>
+      {/* ── Activity Log ── */}
+      <div className="card" style={{padding:16}}>
+        <div style={{display:'flex',alignItems:'center',marginBottom:12}}>
+          <span style={{fontWeight:700,fontSize:13}}>📋 Activity Log</span>
+          <span style={{marginLeft:'auto',fontSize:11,color:'var(--dim)',background:'var(--surface2)',padding:'2px 8px',borderRadius:99}}>{logs.length} entries</span>
+        </div>
         {logs.length===0?(
-          <p style={{fontSize:12,color:'var(--dim)',textAlign:'center',padding:'24px 0'}}>
-            No runs yet. Press <strong>▶ Run</strong> on any category to trigger a workflow now.
-          </p>
+          <div style={{textAlign:'center',padding:'28px 0'}}>
+            <div style={{fontSize:28,marginBottom:8}}>🤖</div>
+            <p style={{fontSize:13,color:'var(--muted)',fontWeight:600}}>No runs yet</p>
+            <p style={{fontSize:11,color:'var(--dim)',marginTop:4}}>Press <strong style={{color:'var(--text)'}}>▶ Run</strong> next to any category above,<br/>or press <strong style={{color:'var(--accent)'}}>🚀 Run All</strong> to start all 5 at once.</p>
+          </div>
         ):(
-          <div style={{display:'flex',flexDirection:'column',gap:6}}>
-            {logs.map(log=>(
-              <div key={log.id} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 11px',background:'var(--surface2)',borderRadius:9,border:'1px solid var(--border)'}}>
-                {logBadge(log.status)}
-                <span style={{fontSize:11,fontWeight:700,minWidth:110,flexShrink:0}}>{CATS.find(c=>c.id===log.category)?.label||log.category}</span>
-                <span style={{fontSize:11,color:'var(--muted)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{log.reason||'—'}</span>
-                <span style={{fontSize:10,color:'var(--dim)',flexShrink:0,whiteSpace:'nowrap'}}>{timeAgo(log.timestamp)}</span>
-              </div>
-            ))}
+          <div style={{display:'flex',flexDirection:'column',gap:5}}>
+            {logs.slice(0,30).map(log=>{
+              const cat=CATS.find(c=>c.id===log.category);
+              const st=log.status;
+              const sc=st==='posted'?'#34d399':st==='error'?'#f87171':'#fbbf24';
+              return(
+                <div key={log.id} style={{display:'grid',gridTemplateColumns:'70px 1fr auto',alignItems:'center',gap:8,padding:'9px 10px',background:'var(--surface2)',borderRadius:9,border:'1px solid var(--border)'}}>
+                  <span style={{fontSize:10,fontWeight:700,padding:'3px 7px',borderRadius:99,background:sc+'18',color:sc,textAlign:'center'}}>
+                    {st==='posted'?'✅ Post':st==='error'?'❌ Err':'⏭️ Skip'}
+                  </span>
+                  <div style={{minWidth:0}}>
+                    <span style={{fontSize:11,fontWeight:700,color:'var(--text)'}}>{cat?.label||log.category}</span>
+                    <span style={{fontSize:10,color:'var(--muted)',marginLeft:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block',maxWidth:'60%',verticalAlign:'middle'}}>{log.reason||'—'}</span>
+                  </div>
+                  <span style={{fontSize:10,color:'var(--dim)',whiteSpace:'nowrap'}}>{timeAgo(log.timestamp)}</span>
+                </div>
+              );
+            })}
           </div>
         )}
+      </div>
+
+      {/* ── How it works ── */}
+      <div style={{marginTop:14,padding:'12px 14px',background:'rgba(96,165,250,.05)',border:'1px solid rgba(96,165,250,.15)',borderRadius:12}}>
+        <p style={{fontSize:11,fontWeight:700,color:'#60a5fa',marginBottom:6}}>ℹ️ How it works</p>
+        <p style={{fontSize:11,color:'var(--muted)',lineHeight:1.8}}>
+          <strong style={{color:'var(--text)'}}>Auto:</strong> GitHub Actions runs on schedule (no action needed from you).<br/>
+          <strong style={{color:'var(--text)'}}>Manual:</strong> Press <strong>▶ Run</strong> beside a category or <strong>🚀 Run All</strong> to trigger now.<br/>
+          <strong style={{color:'var(--text)'}}>Toggle:</strong> Green = ON (will post). Grey = OFF (skips that category).<br/>
+          <strong style={{color:'var(--text)'}}>Flow:</strong> RSS feed → AI script → TTS voice → video clips → final MP4 → Firebase
+        </p>
       </div>
     </div>
   );
@@ -2954,27 +2996,28 @@ const AINewsManager = ({toast, onBack}) => {
       const prompt=isArticleReq
         ?`You are a professional journalist for KWT News (Kuwait & world news platform).
 The user wants: "${userText}"
-Search the internet RIGHT NOW for the LATEST news on this topic (Today: ${new Date().toDateString()}).
-Find real, current news from the past 24-48 hours.
+Write a realistic, professional news article based on your knowledge of current world events and recent news trends. Today's date context: ${new Date().toDateString()}.
+
+IMPORTANT: Write as a real journalist would. Use your training knowledge about real events, real places, real facts. Do NOT say you cannot access the internet — just write the best article you can.
 
 Return ONLY valid JSON (no markdown, no code blocks):
 {
-  "reply": "What I found and wrote about (1-2 sentences)",
+  "reply": "Brief 1-sentence description of the article you wrote",
   "article": {
     "title": "Professional headline max 120 chars",
     "summary": "2-3 sentence news summary",
-    "content": "Full article 4-6 paragraphs with facts and context",
+    "content": "Full article 4-6 paragraphs with facts, context, background",
     "imageQuery": "3-5 word image search term",
     "category": "kuwait OR world OR kuwait-jobs OR kuwait-offers OR funny-news-meme",
     "readTime": "X min read",
-    "source": "Source publication name",
+    "source": "Relevant news source name (e.g. KWT News, Reuters, BBC)",
     "isBreaking": false
   }
 }`
         :`You are an AI news assistant for KWT News admin panel.
 User: "${userText}"
-Search the web if relevant. Be concise and helpful.
-Return ONLY JSON: {"reply": "your response max 300 chars", "article": null}`;
+Answer helpfully and concisely based on your knowledge. Never say you cannot access the internet.
+Return ONLY JSON: {"reply": "your helpful response max 300 chars", "article": null}`;
 
       const responseText=await callAI(prompt);
       const parsed=parseJsonFromText(responseText);
@@ -3078,24 +3121,25 @@ Return ONLY JSON: {"reply": "your response max 300 chars", "article": null}`;
     setGenBusy(true);setPreview(null);
     try{
       const catInfo=CATEGORIES.find(c=>c.value===genCat);
-      const topicPart=genTopic.trim()?`Specifically about: ${genTopic.trim()}`:'Find the most important recent news';
+      const topicPart=genTopic.trim()?`Topic: ${genTopic.trim()}`:`Write about the most significant recent news for this category`;
       const prompt=`You are a professional journalist for KWT News.
-Search the internet for LATEST news right now (${new Date().toDateString()}).
 Category: ${catInfo?.label||genCat}
 ${topicPart}
+Date context: ${new Date().toDateString()}
 
-Find REAL, current news from the past 24-48 hours. Write a complete professional article.
-Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
+Write a complete, realistic professional news article based on your knowledge of real world events, facts, and news trends. Do NOT say you cannot access the internet — use your training knowledge and write confidently as a journalist would.
+
+Return ONLY valid JSON (no markdown, no code blocks):
 {
-  "title": "Compelling headline max 120 chars",
+  "title": "Compelling professional headline max 120 chars",
   "summary": "2-3 sentence news summary",
-  "content": "Full article body 4-6 paragraphs with facts, data, quotes",
+  "content": "Full article 4-6 paragraphs with facts, background, and context",
   "imageQuery": "3-5 word image search term",
   "category": "${genCat}",
   "readTime": "X min read",
-  "source": "News source name",
+  "source": "Appropriate news source (e.g. KWT News, Reuters, Gulf News)",
   "isBreaking": false,
-  "newsFoundAbout": "1 sentence about what actual news you found"
+  "newsFoundAbout": "1 sentence describing what this article covers"
 }`;
       const text=await callAI(prompt);
       const article=parseJsonFromText(text);

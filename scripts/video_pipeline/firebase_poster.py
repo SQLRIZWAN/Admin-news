@@ -23,7 +23,13 @@ def _get_db():
         return _db
 
     if not firebase_admin._apps:
-        sa = json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT'])
+        raw = os.environ.get('FIREBASE_SERVICE_ACCOUNT', '')
+        if not raw:
+            raise RuntimeError(
+                "FIREBASE_SERVICE_ACCOUNT secret is not set. "
+                "Add it in: GitHub repo → Settings → Secrets → Actions"
+            )
+        sa = json.loads(raw)
         cred = credentials.Certificate(sa)
         firebase_admin.initialize_app(cred)
 
@@ -59,18 +65,25 @@ def _jaccard(a: set, b: set) -> float:
 
 
 def get_recent_news(category: str, days: int = 7) -> list:
-    """Fetch recent news for a category from Firestore."""
-    db = _get_db()
-    since = datetime.now(timezone.utc) - timedelta(days=days)
-    snap = (
-        db.collection('news')
-        .where('category', '==', category)
-        .where('timestamp', '>=', since)
-        .order_by('timestamp', direction=firestore.Query.DESCENDING)
-        .limit(60)
-        .get()
-    )
-    return [{'id': d.id, **d.to_dict()} for d in snap]
+    """Fetch recent news for a category from Firestore.
+    Returns empty list on any error (duplicate check then passes through)."""
+    try:
+        db = _get_db()
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        snap = (
+            db.collection('news')
+            .where('category', '==', category)
+            .where('timestamp', '>=', since)
+            .order_by('timestamp', direction=firestore.Query.DESCENDING)
+            .limit(60)
+            .get()
+        )
+        return [{'id': d.id, **d.to_dict()} for d in snap]
+    except Exception as e:
+        # Common cause: composite index not yet created in Firestore.
+        # Safe to return [] — duplicate check will pass and pipeline continues.
+        print(f"   ⚠️  get_recent_news error (skipping dedup, will still post): {e}")
+        return []
 
 
 def check_duplicate(new_title: str, existing: list, threshold: float = 0.45) -> dict:
