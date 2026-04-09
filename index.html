@@ -2406,10 +2406,12 @@ const LogosManager = ({toast}) => {
   const [saving,       setSaving]       = useState(false);
   const [preview,      setPreview]      = useState('');
   const [domainInput,  setDomainInput]  = useState('');
-  const [tab,          setTab]          = useState('domain'); // 'domain'|'pixabay'|'url'
+  const [tab,          setTab]          = useState('domain'); // 'domain'|'pixabay'|'url'|'phone'
   const [galleryQ,     setGalleryQ]     = useState('');
   const [gallery,      setGallery]      = useState([]);
   const [searching,    setSearching]    = useState(false);
+  const [phoneUploading, setPhoneUploading] = useState(false);
+  const phoneInputRef = useRef(null);
 
   useEffect(()=>{
     const u=db.collection('logos').orderBy('name').onSnapshot(s=>{
@@ -2446,6 +2448,34 @@ const LogosManager = ({toast}) => {
   const pickImage = url=>{
     setForm(p=>({...p,url})); setPreview(url);
     toast.show('Image selected — enter name and save','success');
+  };
+
+  // ── Phone gallery upload to Cloudinary ──────────────────────
+  const handlePhoneFile = async (e) => {
+    const file = e.target.files?.[0];
+    if(!file) return;
+    // Show local preview immediately
+    const localUrl = URL.createObjectURL(file);
+    setPreview(localUrl);
+    setPhoneUploading(true);
+    try{
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('upload_preset', CLOUDINARY.uploadPreset);
+      fd.append('folder', 'logos');
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/image/upload`, {method:'POST', body:fd});
+      const data = await res.json();
+      if(data.error) throw new Error(data.error.message);
+      const cloudUrl = data.secure_url;
+      setForm(p=>({...p, url:cloudUrl}));
+      setPreview(cloudUrl);
+      toast.show('✅ Image uploaded — enter name and save','success');
+    }catch(err){
+      toast.show('Upload failed: '+err.message,'error');
+    }
+    setPhoneUploading(false);
+    // Reset file input so same file can be re-selected
+    if(phoneInputRef.current) phoneInputRef.current.value='';
   };
 
   const add = async()=>{
@@ -2495,9 +2525,10 @@ const LogosManager = ({toast}) => {
         <p style={{fontWeight:700,fontSize:13,marginBottom:12}}>➕ Add Source Logo</p>
 
         {/* Tab selector */}
-        <div style={{display:'flex',gap:6,marginBottom:14}}>
+        <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
           {TAB_BTN('domain','🌐 Domain Auto')}
           {TAB_BTN('pixabay','🖼️ Image Search')}
+          {TAB_BTN('phone','📱 Phone Gallery')}
           {TAB_BTN('url','🔗 Paste URL')}
         </div>
 
@@ -2540,6 +2571,30 @@ const LogosManager = ({toast}) => {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Phone gallery tab */}
+        {tab==='phone'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            <p style={{fontSize:11,color:'var(--muted)'}}>Select an image from your phone or computer. It will be uploaded to cloud and saved as logo.</p>
+            <input ref={phoneInputRef} type="file" accept="image/*" style={{display:'none'}} onChange={handlePhoneFile}/>
+            <button className="btn btn-accent" onClick={()=>phoneInputRef.current?.click()} disabled={phoneUploading}
+              style={{padding:'12px 20px',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}>
+              {phoneUploading
+                ?<><span className="spinner" style={{width:14,height:14}}/> Uploading...</>
+                :<>📱 Choose from Gallery</>}
+            </button>
+            {preview&&(
+              <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--surface2)',borderRadius:10,border:'1px solid var(--border)'}}>
+                <img src={preview} alt="preview" style={{width:48,height:48,borderRadius:8,objectFit:'contain',background:'#fff',border:'1px solid var(--border)',flexShrink:0}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{fontSize:12,fontWeight:700,color:'var(--text)'}}>Uploaded ✅</p>
+                  <p style={{fontSize:10,color:'var(--dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{form.url}</p>
+                </div>
+              </div>
+            )}
+            <p style={{fontSize:10,color:'var(--dim)'}}>Supports JPG, PNG, SVG, WebP. Max 10MB.</p>
           </div>
         )}
 
@@ -2601,8 +2656,18 @@ const LogosManager = ({toast}) => {
           <div style={{display:'flex',flexDirection:'column',gap:6}}>
             {logos.map(logo=>(
               <div key={logo.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--surface2)',borderRadius:10,border:'1px solid var(--border)'}}>
-                <img src={logo.url} alt={logo.name} style={{width:36,height:36,borderRadius:8,objectFit:'contain',background:'#fff',border:'1px solid var(--border)',flexShrink:0}}
-                  onError={e=>{e.target.style.display='none';}}/>
+                {/* Logo image with letter-avatar fallback */}
+                <div style={{width:36,height:36,borderRadius:8,background:'var(--surface)',border:'1px solid var(--border)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <img src={logo.url} alt={logo.name}
+                    style={{width:'100%',height:'100%',objectFit:'contain',background:'#fff'}}
+                    onError={e=>{
+                      e.target.style.display='none';
+                      e.target.nextSibling.style.display='flex';
+                    }}/>
+                  <span style={{display:'none',width:'100%',height:'100%',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:800,color:'var(--accent)',background:'rgba(245,166,35,.1)'}}>
+                    {(logo.name||'?')[0].toUpperCase()}
+                  </span>
+                </div>
                 <div style={{flex:1,minWidth:0}}>
                   <p style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{logo.name}</p>
                   <p style={{fontSize:10,color:'var(--dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{logo.url}</p>
@@ -3263,7 +3328,8 @@ const AINewsManager = ({toast, onBack}) => {
     setDraftsLoading(true);
     try{
       const snap=await db.collection('news').orderBy('timestamp','desc').limit(100).get();
-      setDrafts(snap.docs.map(d=>({id:d.id,...d.data()})).filter(d=>d.aiGenerated&&d.hidden));
+      // Show ALL AI-generated articles (hidden drafts AND published auto-posts)
+      setDrafts(snap.docs.map(d=>({id:d.id,...d.data()})).filter(d=>d.aiGenerated));
     }catch(e){ console.error(e); }
     setDraftsLoading(false);
   };
@@ -3377,13 +3443,15 @@ Return ONLY JSON: {"reply": "your helpful response max 300 chars", "article": nu
         category: fullArticle.category||'general',
         source: fullArticle.source||'KWT News',
         sourceLogo: fullArticle.sourceLogo||'',
-        imageUrl: '',
+        imageUrl: img1||'',
+        thumbnail: img1||'',
         videoUrl: '',
-        thumbnail: '',
-        mediaType: 'video',
+        mediaType: 'article',
         readTime: fullArticle.readTime||'3 min read',
         isBreaking: fullArticle.isBreaking||false,
         hidden: true,
+        published: false,
+        status: 'draft',
         aiGenerated: true,
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
         views:0, likes:0, commentCount:0,
@@ -3409,7 +3477,7 @@ Return ONLY JSON: {"reply": "your helpful response max 300 chars", "article": nu
         setVideoProgress(100);
 
         // 6. Update draft with videoUrl
-        await db.collection('news').doc(docRef.id).update({videoUrl, mediaType:'video'});
+        await db.collection('news').doc(docRef.id).update({videoUrl, mediaType:'article'});
         setVideoStatus(''); setVideoBusy(false);
         toast.add('✅ Video draft saved with voice & logo!','ok');
         setMsgs(p=>[...p,{role:'ai',text:'✅ Video draft saved! Go to the Drafts tab to review and publish.'}]);
@@ -3482,9 +3550,9 @@ Return ONLY valid JSON (no markdown, no code blocks):
   const publishDraft = async(id)=>{
     setActionId(id+'-pub');
     try{
-      await db.collection('news').doc(id).update({hidden:false});
+      await db.collection('news').doc(id).update({hidden:false, published:true, status:'published'});
       toast.add('Published! Article is now live.','ok');
-      setDrafts(p=>p.filter(d=>d.id!==id));
+      fetchDrafts();
     }catch(e){ toast.add('Publish failed','error'); }
     setActionId(null);
   };
@@ -3653,7 +3721,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
         <div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
             <p style={{fontSize:13,color:'var(--muted)'}}>
-              {draftsLoading?'Loading...':`${drafts.length} AI draft${drafts.length!==1?'s':''} waiting for review`}
+              {draftsLoading?'Loading...':`${drafts.length} AI article${drafts.length!==1?'s':''} · ${drafts.filter(d=>d.hidden).length} pending review`}
             </p>
             <button className="btn btn-ghost" onClick={fetchDrafts} style={{fontSize:12,padding:'6px 12px'}}>
               <Ic n="refresh" s={14}/> Refresh
@@ -3681,7 +3749,10 @@ Return ONLY valid JSON (no markdown, no code blocks):
                     <div style={{padding:'12px 14px',flex:1,minWidth:0}}>
                       <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:6}}>
                         <span className="badge" style={{background:'rgba(99,102,241,.15)',color:'#818cf8',border:'1px solid rgba(99,102,241,.3)',fontSize:9}}>AI</span>
-                        {d.isBreaking&&<span className="badge" style={{background:'rgba(239,68,68,.15)',color:'#f87171',border:'1px solid rgba(239,68,68,.3)',fontSize:9}}>BREAKING</span>}
+                        {d.hidden
+                          ?<span className="badge" style={{background:'rgba(250,200,40,.12)',color:'#fbbf24',border:'1px solid rgba(250,200,40,.3)',fontSize:9}}>DRAFT</span>
+                          :<span className="badge" style={{background:'rgba(52,211,153,.12)',color:'#34d399',border:'1px solid rgba(52,211,153,.3)',fontSize:9}}>PUBLISHED</span>}
+                        {d.isBreaking&&<span className="badge" style={{background:'rgba(239,68,68,.15)',color:'#f87171',border:'1px solid rgba(239,68,68,.3)',fontSize:9}}>⚡BREAKING</span>}
                         <span style={{fontSize:10,color:'var(--dim)'}}>{CATEGORIES.find(c=>c.value===d.category)?.label||d.category}</span>
                         <span style={{fontSize:10,color:'var(--dim)'}}>{timeAgo(d.timestamp)}</span>
                       </div>
@@ -3690,10 +3761,13 @@ Return ONLY valid JSON (no markdown, no code blocks):
                     </div>
                   </div>
                   <div style={{padding:'10px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:8}}>
-                    <button className="btn btn-accent" style={{flex:2,fontSize:12,padding:'8px 10px'}}
-                      disabled={actionId===d.id+'-pub'} onClick={()=>publishDraft(d.id)}>
-                      {actionId===d.id+'-pub'?'...':'🚀 Publish'}
-                    </button>
+                    {d.hidden
+                      ?<button className="btn btn-accent" style={{flex:2,fontSize:12,padding:'8px 10px'}}
+                          disabled={actionId===d.id+'-pub'} onClick={()=>publishDraft(d.id)}>
+                          {actionId===d.id+'-pub'?'...':'🚀 Publish'}
+                        </button>
+                      :<span style={{flex:2,display:'flex',alignItems:'center',fontSize:12,color:'#34d399',fontWeight:700,paddingLeft:4}}>✅ Live</span>
+                    }
                     <button className="btn btn-ghost" style={{flex:1,fontSize:12,padding:'8px 10px'}}
                       onClick={()=>openDraftEdit(d)}>
                       ✏️ Edit

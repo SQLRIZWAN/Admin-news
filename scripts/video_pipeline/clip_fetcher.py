@@ -5,6 +5,7 @@ Fallback: Pixabay (video then image)
 """
 
 import os
+import random
 import re
 import requests
 import urllib.request
@@ -183,18 +184,22 @@ def get_pixabay_image(keyword: str) -> str:
                     'safesearch': 'true',
                     'orientation': 'horizontal',
                     'min_width': 800,
-                    'per_page': 8,
+                    'per_page': 10,
                     'order': 'popular',
                     'editors_choice': 'false',
+                    # Vary the page so we don't get the exact same image every run
+                    'page': random.randint(1, 3),
                 },
                 timeout=15,
             )
             data = res.json()
             hits = data.get('hits', [])
             if hits:
-                url = hits[0].get('largeImageURL') or hits[0].get('webformatURL', '')
+                # Pick randomly from top 3 results to avoid always same thumbnail
+                pick = random.randint(0, min(2, len(hits) - 1))
+                url = hits[pick].get('largeImageURL') or hits[pick].get('webformatURL', '')
                 if url:
-                    print(f"   Thumbnail: '{q}' → found")
+                    print(f"   Thumbnail: '{q}' → found (hit #{pick+1})")
                     return url
         except Exception as e:
             print(f"   Pixabay image error ({q}): {e}")

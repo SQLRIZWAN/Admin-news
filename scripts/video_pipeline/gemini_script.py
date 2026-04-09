@@ -286,14 +286,17 @@ Return ONLY valid JSON (no markdown code blocks):
   "title": "Hindi headline",
   "summary": "2-3 sentence Hindi summary",
   "content": "Full article body (300-500 words)",
-  "script": "55-65 word Hindi spoken narration in Devanagari",
+  "script": "55-65 word Hindi spoken narration in Devanagari — ONLY speech text, NO JSON or code",
   "keywords": ["visual scene 1", "visual scene 2", "visual scene 3"],
   "subtitle_lines": ["Hindi line one", "Hindi line two", "Hindi line three", "Hindi line four"],
   "image_keyword": "english thumbnail keyword",
   "source": "Publication name",
+  "isBreaking": false,
   {extra_fields}
   "skip": false
-}}"""
+}}
+
+Set "isBreaking": true ONLY for major breaking events: natural disasters, major political/military crises, mass casualty events, or major economic shocks. Routine news = false."""
 
     # ── Try Gemini ────────────────────────────────────────────────
     try:
@@ -311,6 +314,7 @@ Return ONLY valid JSON (no markdown code blocks):
             data.setdefault('source',         news_item['source'] if news_item else 'KWT News')
             data.setdefault('apply_link',     '')
             data.setdefault('buy_link',       '')
+            data.setdefault('isBreaking',     False)
             data['skip'] = False
             return data
 

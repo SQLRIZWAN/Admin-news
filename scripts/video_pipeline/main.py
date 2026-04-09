@@ -45,9 +45,10 @@ def _banner(msg: str) -> None:
     print(f"{'─'*55}")
 
 
-def run(category: str) -> bool:
+def run(category: str, breaking_only: bool = False) -> bool:
     """
     Execute the full pipeline for the given category.
+    breaking_only=True: only post if Gemini marks isBreaking=True.
     Returns True if a news article was posted, False if skipped.
     """
     cfg = CATEGORIES.get(category)
@@ -121,6 +122,15 @@ def run(category: str) -> bool:
         print("      No news found from any source — skipping this run.")
         write_automation_log(category, 'skipped', reason='no news from RSS or AI')
         return False
+
+    # ── 4b. Breaking-only mode filter ───────────────────────────────────────
+    is_breaking = bool(script_data.get('isBreaking', False))
+    if breaking_only and not is_breaking:
+        print(f"⏭️   Breaking-only mode: news is not breaking — skipping.")
+        write_automation_log(category, 'skipped', reason='breaking-only mode: not a breaking event')
+        return False
+    if is_breaking:
+        print(f"⚡  Gemini marked this as BREAKING NEWS")
 
     words = len(script_data['script'].split())
     print(f"      Title: {script_data['title'][:60]}")
@@ -205,7 +215,7 @@ def run(category: str) -> bool:
             'source':     source_name,
             'sourceLogo': source_logo or '',
             'readTime':   f"{max(1, len(script_data['script'].split()) // 130)} min read",
-            'isBreaking': False,
+            'isBreaking': is_breaking,
             # Use 'article' so the news feed query includes it.
             # videoUrl field still holds the video — app can play it.
             'mediaType':  'article',
@@ -247,7 +257,7 @@ def main():
         print("🚨  BREAKING NEWS WATCHER MODE — only high-importance events will be posted")
 
     try:
-        posted = run(args.category)
+        posted = run(args.category, breaking_only=args.breaking_only)
         sys.exit(0)
 
     except Exception as exc:

@@ -5,9 +5,50 @@ Uses SSML for natural-sounding Hindi speech (pauses, prosody).
 """
 
 import asyncio
+import json
 import os
 import re
 import edge_tts
+
+
+def _clean_for_tts(script: str) -> str:
+    """
+    Strip JSON artifacts, markdown code blocks, and programming syntax
+    from a script before passing to TTS. Prevents the voice from reading
+    JSON keys, backticks, braces, or markdown formatting aloud.
+    """
+    if not script:
+        return ''
+
+    s = script.strip()
+
+    # If it looks like a JSON object, try to extract the 'script' field
+    if s.startswith('{') or '```' in s:
+        try:
+            cleaned_s = re.sub(r'```(?:json)?\s*', '', s).replace('```', '').strip()
+            data = json.loads(cleaned_s)
+            if isinstance(data, dict) and data.get('script'):
+                return _clean_for_tts(data['script'])
+        except Exception:
+            pass
+
+    # Strip markdown code fences (```...```)
+    s = re.sub(r'```[\s\S]*?```', ' ', s)
+    # Strip inline backtick code
+    s = re.sub(r'`[^`]*`', ' ', s)
+    # Strip JSON key-value patterns: "key": "value" or "key": true/false/number
+    s = re.sub(r'"[a-zA-Z_]+"\s*:\s*(?:"[^"]*"|\[[^\]]*\]|true|false|null|-?\d+\.?\d*)', ' ', s)
+    # Strip remaining braces / brackets
+    s = re.sub(r'[{}\[\]]', ' ', s)
+    # Strip markdown headers (## Heading)
+    s = re.sub(r'^#{1,6}\s+', '', s, flags=re.MULTILINE)
+    # Strip markdown bullets
+    s = re.sub(r'^[\*\-\+]\s+', '', s, flags=re.MULTILINE)
+    # Strip bold/italic markers but keep text
+    s = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', s)
+    # Collapse whitespace
+    s = ' '.join(s.split())
+    return s.strip()
 
 
 def _to_ssml(script: str, voice: str) -> str:
@@ -16,7 +57,10 @@ def _to_ssml(script: str, voice: str) -> str:
     Uses mstts:express-as style="newscast-casual" for hi-IN voices.
     Falls back to prosody adjustments if express-as is not supported.
     """
-    # Escape XML special characters first
+    # Clean any code/JSON artifacts BEFORE escaping XML
+    script = _clean_for_tts(script)
+
+    # Escape XML special characters
     text = script.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
     # Natural pauses at Hindi/English sentence boundaries
@@ -24,10 +68,10 @@ def _to_ssml(script: str, voice: str) -> str:
     text = re.sub(r'([,،;])\s+',   r'\1<break time="180ms"/> ', text)
 
     # Use express-as newscast-casual style for more human-like delivery
-    # This style is available on hi-IN-MadhurNeural and hi-IN-SwaraNeural
+    # styledegree="2" = maximum expressiveness on hi-IN-MadhurNeural / hi-IN-SwaraNeural
     inner = (
-        f'<mstts:express-as style="newscast-casual" styledegree="1.5">'
-        f'<prosody rate="-5%" pitch="-1%">'
+        f'<mstts:express-as style="newscast-casual" styledegree="2">'
+        f'<prosody rate="-8%" pitch="+0%">'
         f'{text}'
         f'</prosody>'
         f'</mstts:express-as>'
@@ -82,6 +126,11 @@ def generate_tts(script: str, output_path: str, voice: str = 'hi-IN-MadhurNeural
     Returns:
         List of dicts: [{word, start, duration}, ...]
     """
+    # Strip any JSON/code artifacts before sending to TTS
+    script = _clean_for_tts(script)
+    if not script:
+        raise ValueError("Script is empty after cleaning — nothing to convert to speech")
+
     # Try SSML first, fall back to plain text if SSML fails
     attempts = [
         (voice, True),                    # Primary voice with SSML
