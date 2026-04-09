@@ -1,16 +1,18 @@
-name: 😂 Auto News — Funny & Memes
+name: 🚀 Run All Categories (Manual)
 
 on:
-  schedule:
-    # 20:00 Kuwait time (UTC+3) daily = 17:00 UTC
-    - cron: '0 17 * * *'
   workflow_dispatch:
 
 jobs:
-  post-news:
-    name: Funny & Memes Video
+  run-category:
+    name: "▶ ${{ matrix.category }}"
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        category: [kuwait, world, kuwait-jobs, kuwait-offers, funny-news-meme]
+      fail-fast: false   # keep running other categories even if one fails
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,10 +28,10 @@ jobs:
       - name: Install Python deps
         run: pip install -r scripts/video_pipeline/requirements.txt
 
-      - name: Run pipeline
+      - name: Run pipeline — ${{ matrix.category }}
         env:
-          GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
-          PEXELS_API_KEY:           ${{ secrets.PEXELS_API_KEY }}
-          PIXABAY_API_KEY:          ${{ secrets.PIXABAY_API_KEY }}
+          GEMINI_API_KEY:          ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY:          ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY:         ${{ secrets.PIXABAY_API_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: python scripts/video_pipeline/main.py --category=funny-news-meme
+        run: python scripts/video_pipeline/main.py --category=${{ matrix.category }}

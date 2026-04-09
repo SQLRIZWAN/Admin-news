@@ -1904,7 +1904,7 @@ const AutomationPage = ({toast}) => {
     {id:'funny-news-meme', label:'😂 Funny & Memes', color:'#fbbf24', schedule:'20:00 KWT daily',    workflow:'auto-funny.yml'},
   ];
   const GH_REPO   = 'SQLRIZWAN/Admin-news';
-  const GH_BRANCH = 'claude/automated-news-posting-mvt4N';
+  const GH_BRANCH = 'main';
   const LS_TOKEN  = 'kwt_github_token';
   const LS_PEXELS = 'kwt_pexels_key';
 
@@ -2014,13 +2014,35 @@ const AutomationPage = ({toast}) => {
          body:JSON.stringify({ref:GH_BRANCH})}
       );
       if(r.status===204){
-        toast.show(`🚀 ${cat.label} — workflow triggered!`,'success');
+        toast.show(`🚀 ${cat.label} — triggered!`,'success');
         setTimeout(fetchGhRuns, 4000);
       } else {
         const d=await r.json(); toast.show('GitHub error: '+(d.message||r.status),'error');
       }
     }catch(e){ toast.show('Trigger failed: '+e.message,'error'); }
     setTriggering(p=>({...p,[cat.id]:false}));
+  };
+
+  // ── Run ALL categories at once via run-all.yml ───────────────
+  const [runningAll, setRunningAll] = useState(false);
+  const runAll = async ()=>{
+    const tok=localStorage.getItem(LS_TOKEN);
+    if(!tok){ toast.show('Set GitHub token first','error'); setShowSetup(true); return; }
+    setRunningAll(true);
+    try{
+      const r=await fetch(
+        `https://api.github.com/repos/${GH_REPO}/actions/workflows/run-all.yml/dispatches`,
+        {method:'POST',headers:{'Authorization':`Bearer ${tok}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+         body:JSON.stringify({ref:GH_BRANCH})}
+      );
+      if(r.status===204){
+        toast.show('🚀 All 5 categories triggered in parallel!','success');
+        setTimeout(fetchGhRuns, 5000);
+      } else {
+        const d=await r.json(); toast.show('GitHub error: '+(d.message||r.status),'error');
+      }
+    }catch(e){ toast.show('Trigger failed: '+e.message,'error'); }
+    setRunningAll(false);
   };
 
   // ── Helpers ──────────────────────────────────────────────────
@@ -2068,8 +2090,12 @@ const AutomationPage = ({toast}) => {
         </div>
         <div style={{flex:1}}>
           <h1 style={{fontSize:21,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>Automation</h1>
-          <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>RSS → Gemini → Edge-TTS → Video → Firebase  •  Auto + Manual</p>
+          <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>RSS → AI Script → TTS → Video → Firebase  •  5 categories</p>
         </div>
+        <button className="btn btn-accent" style={{padding:'8px 13px',fontSize:12,fontWeight:700,flexShrink:0}}
+          onClick={runAll} disabled={runningAll} title="Run all 5 categories at once on GitHub Actions">
+          {runningAll?<span className="spinner" style={{width:13,height:13}}/>:<>🚀 Run All</>}
+        </button>
         <button className="btn btn-ghost" style={{padding:'7px 12px',fontSize:12}} onClick={()=>setShowSetup(v=>!v)}>
           <Ic n="cog" s={13}/> Setup
         </button>
