@@ -29,6 +29,7 @@ from video_editor import create_video
 from uploader import upload_video, upload_image_from_url
 from firebase_poster import (
     get_recent_news,
+    get_all_recent_news,
     check_duplicate,
     get_source_logo,
     post_news,
@@ -65,18 +66,21 @@ def run(category: str) -> bool:
 
     # ── 2. Fetch latest news from RSS ────────────────────────────────────────
     print("\n📡  Step 1 — Fetching RSS...")
-    news_item = get_latest_news(cfg['rss_feeds'])
+    news_item = get_latest_news(
+        cfg['rss_feeds'],
+        filter_keywords=cfg.get('filter_keywords', []),
+    )
 
     if news_item:
         print(f"      Found: {news_item['title'][:70]}")
     else:
         print("      No RSS result — Gemini will search for news directly.")
 
-    # ── 3. Duplicate check ───────────────────────────────────────────────────
+    # ── 3. Duplicate check (cross-category, last 3 days) ────────────────────
     if news_item:
-        print("\n🔍  Step 2 — Duplicate check...")
-        recent = get_recent_news(category, days=7)
-        dup = check_duplicate(news_item['title'], recent)
+        print("\n🔍  Step 2 — Duplicate check (all categories, last 3 days)...")
+        all_recent = get_all_recent_news(days=3)
+        dup = check_duplicate(news_item['title'], all_recent, threshold=0.40)
         if dup['is_duplicate']:
             print(f"      Duplicate ({dup['score']:.2f}): {dup['matched_title'][:60]}")
             write_automation_log(
@@ -84,7 +88,7 @@ def run(category: str) -> bool:
                 reason=f"duplicate of: {dup['matched_title'][:80]}"
             )
             return False
-        print(f"      ✅ Not a duplicate (checked {len(recent)} recent articles)")
+        print(f"      ✅ Not a duplicate (checked {len(all_recent)} recent articles across all categories)")
 
     # ── 4. Generate script (AI + fallback) ──────────────────────────────────────
     print("\n🤖  Step 3 — Generating script (Gemini AI → RSS fallback)...")

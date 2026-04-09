@@ -65,8 +65,7 @@ def _jaccard(a: set, b: set) -> float:
 
 
 def get_recent_news(category: str, days: int = 7) -> list:
-    """Fetch recent news for a category from Firestore.
-    Returns empty list on any error (duplicate check then passes through)."""
+    """Fetch recent news for a single category from Firestore."""
     try:
         db = _get_db()
         since = datetime.now(timezone.utc) - timedelta(days=days)
@@ -83,6 +82,25 @@ def get_recent_news(category: str, days: int = 7) -> list:
         # Common cause: composite index not yet created in Firestore.
         # Safe to return [] — duplicate check will pass and pipeline continues.
         print(f"   ⚠️  get_recent_news error (skipping dedup, will still post): {e}")
+        return []
+
+
+def get_all_recent_news(days: int = 3) -> list:
+    """Fetch recent news across ALL categories — for cross-category duplicate check.
+    Returns empty list on any error."""
+    try:
+        db = _get_db()
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        snap = (
+            db.collection('news')
+            .where('timestamp', '>=', since)
+            .order_by('timestamp', direction=firestore.Query.DESCENDING)
+            .limit(200)
+            .get()
+        )
+        return [{'id': d.id, **d.to_dict()} for d in snap]
+    except Exception as e:
+        print(f"   ⚠️  get_all_recent_news error (skipping cross-category dedup): {e}")
         return []
 
 

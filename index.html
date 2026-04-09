@@ -2257,6 +2257,54 @@ const AutomationPage = ({toast}) => {
         )}
       </div>
 
+      {/* ── Fix Hidden Articles ── */}
+      {(()=>{
+        const [hiddenCount, setHiddenCount] = useState(null);
+        const [fixing, setFixing] = useState(false);
+        const checkHidden = async ()=>{
+          try{
+            const s = await db.collection('news').where('hidden','==',true).get();
+            const s2 = await db.collection('news').where('published','==',false).get();
+            const ids = new Set([...s.docs.map(d=>d.id),...s2.docs.map(d=>d.id)]);
+            setHiddenCount(ids.size);
+          }catch(e){ setHiddenCount(0); }
+        };
+        const fixHidden = async ()=>{
+          setFixing(true);
+          try{
+            const s1 = await db.collection('news').where('hidden','==',true).get();
+            const s2 = await db.collection('news').where('published','==',false).get();
+            const allDocs = [...s1.docs, ...s2.docs];
+            const seen = new Set();
+            const unique = allDocs.filter(d=>{ if(seen.has(d.id)) return false; seen.add(d.id); return true; });
+            // Process in batches of 400
+            for(let i=0;i<unique.length;i+=400){
+              const batch = db.batch();
+              unique.slice(i,i+400).forEach(d=>batch.update(d.ref,{hidden:false,published:true,status:'published'}));
+              await batch.commit();
+            }
+            toast.show(`✅ Published ${unique.length} hidden articles!`,'success');
+            setHiddenCount(0);
+          }catch(e){ toast.show('Error: '+e.message,'error'); }
+          setFixing(false);
+        };
+        React.useEffect(()=>{ checkHidden(); },[]);
+        return(
+          <div style={{marginTop:14,padding:'12px 14px',background:'rgba(248,113,113,.05)',border:'1px solid rgba(248,113,113,.2)',borderRadius:12,display:'flex',alignItems:'center',gap:12}}>
+            <div style={{flex:1}}>
+              <p style={{fontSize:12,fontWeight:700,color:'#f87171',marginBottom:2}}>🔒 Hidden Articles</p>
+              <p style={{fontSize:11,color:'var(--muted)'}}>{hiddenCount===null?'Checking…':hiddenCount===0?'All articles are published ✅':`${hiddenCount} articles are hidden or unpublished`}</p>
+            </div>
+            {(hiddenCount===null||hiddenCount>0)&&(
+              <button onClick={hiddenCount===null?checkHidden:fixHidden} disabled={fixing}
+                style={{flexShrink:0,padding:'8px 14px',borderRadius:9,border:'1.5px solid rgba(248,113,113,.4)',background:'rgba(248,113,113,.1)',color:'#f87171',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Outfit',display:'flex',alignItems:'center',gap:5}}>
+                {fixing?<><span className="spinner" style={{width:11,height:11}}/> Fixing…</>:hiddenCount===null?'Check':'Publish All'}
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ── How it works ── */}
       <div style={{marginTop:14,padding:'12px 14px',background:'rgba(96,165,250,.05)',border:'1px solid rgba(96,165,250,.15)',borderRadius:12}}>
         <p style={{fontSize:11,fontWeight:700,color:'#60a5fa',marginBottom:6}}>ℹ️ How it works</p>
@@ -2264,7 +2312,8 @@ const AutomationPage = ({toast}) => {
           <strong style={{color:'var(--text)'}}>Auto:</strong> GitHub Actions runs on schedule (no action needed from you).<br/>
           <strong style={{color:'var(--text)'}}>Manual:</strong> Press <strong>▶ Run</strong> beside a category or <strong>🚀 Run All</strong> to trigger now.<br/>
           <strong style={{color:'var(--text)'}}>Toggle:</strong> Green = ON (will post). Grey = OFF (skips that category).<br/>
-          <strong style={{color:'var(--text)'}}>Flow:</strong> RSS feed → AI script → TTS voice → video clips → final MP4 → Firebase
+          <strong style={{color:'var(--text)'}}>Voice:</strong> Hindi (Devanagari) script with hi-IN Edge TTS voices.<br/>
+          <strong style={{color:'var(--text)'}}>Flow:</strong> RSS feed → AI Hindi script → TTS audio → video clips → final MP4 → Firebase
         </p>
       </div>
     </div>
@@ -2309,11 +2358,16 @@ const SettingsPage = ({user,toast}) => (
 
 // ── LOGOS MANAGER ────────────────────────────────────────────
 const LogosManager = ({toast}) => {
-  const [logos,  setLogos]  = useState([]);
-  const [loading,setLoading]= useState(true);
-  const [form,   setForm]   = useState({name:'',url:''});
-  const [saving, setSaving] = useState(false);
-  const [preview,setPreview]= useState('');
+  const [logos,        setLogos]        = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [form,         setForm]         = useState({name:'',url:''});
+  const [saving,       setSaving]       = useState(false);
+  const [preview,      setPreview]      = useState('');
+  const [domainInput,  setDomainInput]  = useState('');
+  const [tab,          setTab]          = useState('domain'); // 'domain'|'pixabay'|'url'
+  const [galleryQ,     setGalleryQ]     = useState('');
+  const [gallery,      setGallery]      = useState([]);
+  const [searching,    setSearching]    = useState(false);
 
   useEffect(()=>{
     const u=db.collection('logos').orderBy('name').onSnapshot(s=>{
@@ -2323,16 +2377,45 @@ const LogosManager = ({toast}) => {
     return ()=>u();
   },[]);
 
+  // ── Domain → Clearbit logo ──────────────────────────────────
+  const applyDomain = ()=>{
+    const raw = domainInput.trim().toLowerCase()
+      .replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+    if(!raw){ toast.show('Enter a domain name e.g. bbc.com','error'); return; }
+    const url = `https://logo.clearbit.com/${raw}`;
+    setForm(p=>({...p, url, name:p.name||raw.replace(/\.(com|net|org|kw|ae|co|uk)$/,'').replace(/\./g,' ')}));
+    setPreview(url);
+    toast.show('Logo loaded — verify preview then save','success');
+  };
+
+  // ── Pixabay gallery search ──────────────────────────────────
+  const searchGallery = async ()=>{
+    if(!galleryQ.trim()){ toast.show('Enter search term','error'); return; }
+    setSearching(true);
+    try{
+      const r=await fetch(`https://pixabay.com/api/?key=${AI_CFG.pixabayKey}&q=${encodeURIComponent(galleryQ)}&image_type=vector&safesearch=true&per_page=18&min_width=80`);
+      const d=await r.json();
+      setGallery(d.hits||[]);
+      if(!d.hits?.length) toast.show('No images found — try different keywords','error');
+    }catch(e){ toast.show('Search error: '+e.message,'error'); }
+    setSearching(false);
+  };
+
+  const pickImage = url=>{
+    setForm(p=>({...p,url})); setPreview(url);
+    toast.show('Image selected — enter name and save','success');
+  };
+
   const add = async()=>{
     const name=form.name.trim(), url=form.url.trim();
-    if(!name||!url){ toast.add('Both name and URL required','error'); return; }
-    if(!url.startsWith('http')){ toast.add('URL must start with http','error'); return; }
+    if(!name||!url){ toast.show('Both name and URL required','error'); return; }
+    if(!url.startsWith('http')){ toast.show('URL must start with http','error'); return; }
     setSaving(true);
     try{
       await db.collection('logos').add({name,url,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-      setForm({name:'',url:''}); setPreview('');
-      toast.add('✅ Logo added!','ok');
-    }catch(e){ toast.add('Error: '+e.message,'error'); }
+      setForm({name:'',url:''}); setPreview(''); setDomainInput('');
+      toast.show('✅ Logo added!','success');
+    }catch(e){ toast.show('Error: '+e.message,'error'); }
     setSaving(false);
   };
 
@@ -2340,55 +2423,124 @@ const LogosManager = ({toast}) => {
     if(!confirm(`Delete logo for "${name}"?`)) return;
     try{
       await db.collection('logos').doc(id).delete();
-      toast.add('Deleted','ok');
-    }catch(e){ toast.add('Error: '+e.message,'error'); }
+      toast.show('Deleted','success');
+    }catch(e){ toast.show('Error: '+e.message,'error'); }
   };
+
+  const TAB_BTN = (id,label)=>(
+    <button onClick={()=>setTab(id)}
+      style={{padding:'7px 13px',borderRadius:8,border:`1.5px solid ${tab===id?'var(--accent)':'var(--border)'}`,
+        background:tab===id?'rgba(245,166,35,.12)':'var(--surface2)',color:tab===id?'var(--accent)':'var(--muted)',
+        cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Outfit'}}>
+      {label}
+    </button>
+  );
 
   return (
     <div className="fade-up">
-      <div style={{marginBottom:20}}>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
-          <div style={{width:38,height:38,borderRadius:12,background:'linear-gradient(135deg,#1a2d4a,#243a59)',border:'1px solid var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-            <span style={{fontSize:18}}>🏷️</span>
-          </div>
-          <div>
-            <h1 style={{fontSize:20,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>Source Logos</h1>
-            <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Logo URLs for news sources — shown in auto-posted articles</p>
-          </div>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <div style={{width:38,height:38,borderRadius:12,background:'linear-gradient(135deg,#1a2d4a,#243a59)',border:'1px solid var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <span style={{fontSize:18}}>🏷️</span>
+        </div>
+        <div>
+          <h1 style={{fontSize:20,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>Source Logos</h1>
+          <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Logo images for news sources — used in auto-posted articles</p>
         </div>
       </div>
 
-      {/* Add new logo */}
+      {/* ── Add card ── */}
       <div className="card" style={{padding:18,marginBottom:16}}>
         <p style={{fontWeight:700,fontSize:13,marginBottom:12}}>➕ Add Source Logo</p>
-        <div style={{display:'flex',flexDirection:'column',gap:8}}>
-          <input className="inp" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}
-            placeholder="Source name  e.g. BBC News, Al Jazeera, Kuwait Times"/>
-          <div style={{display:'flex',gap:8}}>
-            <input className="inp" style={{flex:1}} value={form.url}
-              onChange={e=>{ setForm(p=>({...p,url:e.target.value})); setPreview(e.target.value.trim()); }}
-              placeholder="Logo image URL  https://..."/>
-            {preview&&(
-              <img src={preview} alt="preview"
-                style={{width:44,height:44,borderRadius:8,objectFit:'contain',border:'1px solid var(--border)',background:'#fff',flexShrink:0}}
-                onError={e=>e.target.style.display='none'}/>
+
+        {/* Tab selector */}
+        <div style={{display:'flex',gap:6,marginBottom:14}}>
+          {TAB_BTN('domain','🌐 Domain Auto')}
+          {TAB_BTN('pixabay','🖼️ Image Search')}
+          {TAB_BTN('url','🔗 Paste URL')}
+        </div>
+
+        {/* Domain tab */}
+        {tab==='domain'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            <p style={{fontSize:11,color:'var(--muted)'}}>Enter the news site domain — logo fetched automatically via Clearbit.</p>
+            <div style={{display:'flex',gap:8}}>
+              <input className="inp" style={{flex:1}} value={domainInput}
+                onChange={e=>setDomainInput(e.target.value)}
+                onKeyDown={e=>e.key==='Enter'&&applyDomain()}
+                placeholder="e.g.  bbc.com  /  aljazeera.com  /  reuters.com"/>
+              <button className="btn btn-accent" onClick={applyDomain} style={{padding:'10px 16px',fontWeight:700,flexShrink:0}}>Fetch</button>
+            </div>
+            <p style={{fontSize:10,color:'var(--dim)'}}>Works best with major news sites. If logo doesn't load, switch to Image Search.</p>
+          </div>
+        )}
+
+        {/* Pixabay gallery tab */}
+        {tab==='pixabay'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            <p style={{fontSize:11,color:'var(--muted)'}}>Search Pixabay for a logo image and click to select it.</p>
+            <div style={{display:'flex',gap:8}}>
+              <input className="inp" style={{flex:1}} value={galleryQ}
+                onChange={e=>setGalleryQ(e.target.value)}
+                onKeyDown={e=>e.key==='Enter'&&searchGallery()}
+                placeholder="Search images e.g. BBC logo, newspaper icon, TV news"/>
+              <button className="btn btn-accent" onClick={searchGallery} disabled={searching}
+                style={{padding:'10px 16px',fontWeight:700,flexShrink:0}}>
+                {searching?<span className="spinner" style={{width:13,height:13}}/>:'Search'}
+              </button>
+            </div>
+            {gallery.length>0&&(
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(72px,1fr))',gap:6,maxHeight:220,overflowY:'auto',padding:4}}>
+                {gallery.map(hit=>(
+                  <div key={hit.id} onClick={()=>pickImage(hit.webformatURL)}
+                    style={{cursor:'pointer',borderRadius:8,overflow:'hidden',border:`2px solid ${form.url===hit.webformatURL?'var(--accent)':'var(--border)'}`,aspectRatio:'1',background:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    <img src={hit.previewURL} alt="" style={{width:'100%',height:'100%',objectFit:'contain'}}/>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          <button className="btn btn-accent" onClick={add} disabled={saving} style={{padding:'11px',fontWeight:700}}>
-            {saving?'Saving…':'💾 Add Logo'}
+        )}
+
+        {/* Manual URL tab */}
+        {tab==='url'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            <p style={{fontSize:11,color:'var(--muted)'}}>Paste a direct image URL for the logo.</p>
+            <div style={{display:'flex',gap:8}}>
+              <input className="inp" style={{flex:1}} value={form.url}
+                onChange={e=>{ setForm(p=>({...p,url:e.target.value})); setPreview(e.target.value.trim()); }}
+                placeholder="https://example.com/logo.png"/>
+              {preview&&<img src={preview} alt="preview"
+                style={{width:44,height:44,borderRadius:8,objectFit:'contain',border:'1px solid var(--border)',background:'#fff',flexShrink:0}}
+                onError={e=>e.target.style.display='none'}/>}
+            </div>
+          </div>
+        )}
+
+        {/* Preview + name + save (shared) */}
+        <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:8}}>
+          {preview&&(
+            <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--surface2)',borderRadius:10,border:'1px solid var(--border)'}}>
+              <img src={preview} alt="preview"
+                style={{width:44,height:44,borderRadius:8,objectFit:'contain',background:'#fff',border:'1px solid var(--border)',flexShrink:0}}
+                onError={e=>{e.target.style.display='none';}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:11,color:'var(--muted)'}}>Preview</p>
+                <p style={{fontSize:10,color:'var(--dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{form.url}</p>
+              </div>
+            </div>
+          )}
+          <input className="inp" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}
+            placeholder="Source name  e.g. BBC News, Al Jazeera, Reuters"/>
+          <button className="btn btn-accent" onClick={add} disabled={saving||!form.url||!form.name} style={{padding:'11px',fontWeight:700}}>
+            {saving?'Saving…':'💾 Save Logo'}
           </button>
         </div>
-        <p style={{fontSize:10,color:'var(--dim)',marginTop:10,lineHeight:1.6}}>
-          Tip: Use a direct image URL from the news website, Wikipedia, or upload to Cloudinary first.
-          Source name must match what the pipeline uses (e.g. "BBC News", "Reuters", "Al Jazeera").
-        </p>
       </div>
 
-      {/* Logos list */}
+      {/* ── Logos list ── */}
       <div className="card" style={{padding:18}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:14}}>
-          <p style={{fontWeight:700,fontSize:13}}>📋 All Logos</p>
-          <span style={{marginLeft:'auto',fontSize:11,color:'var(--dim)',background:'var(--surface2)',padding:'2px 8px',borderRadius:99}}>{logos.length} sources</span>
+          <p style={{fontWeight:700,fontSize:13}}>📋 All Logos ({logos.length})</p>
         </div>
         {loading?(
           <div style={{textAlign:'center',padding:24}}><span className="spinner" style={{width:20,height:20}}/></div>
@@ -2396,14 +2548,19 @@ const LogosManager = ({toast}) => {
           <div style={{textAlign:'center',padding:28}}>
             <div style={{fontSize:32,marginBottom:8}}>🖼️</div>
             <p style={{fontSize:13,color:'var(--muted)'}}>No logos yet</p>
-            <p style={{fontSize:11,color:'var(--dim)',marginTop:4}}>Add logos above — they'll appear next to news sources in auto-posts</p>
+            <p style={{fontSize:11,color:'var(--dim)',marginTop:4}}>Add logos above — matched to source names in auto-posts</p>
+            <div style={{marginTop:14,textAlign:'left',background:'var(--surface2)',borderRadius:10,padding:'12px 14px',fontSize:11,color:'var(--dim)',lineHeight:1.8}}>
+              <strong style={{color:'var(--muted)'}}>Common sources to add:</strong><br/>
+              BBC News (bbc.com) • Al Jazeera (aljazeera.com) • Reuters (reuters.com)<br/>
+              Arab Times Online (arabtimesonline.com) • Kuwait Times (kuwaittimes.com)
+            </div>
           </div>
         ):(
           <div style={{display:'flex',flexDirection:'column',gap:6}}>
             {logos.map(logo=>(
               <div key={logo.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--surface2)',borderRadius:10,border:'1px solid var(--border)'}}>
                 <img src={logo.url} alt={logo.name} style={{width:36,height:36,borderRadius:8,objectFit:'contain',background:'#fff',border:'1px solid var(--border)',flexShrink:0}}
-                  onError={e=>{e.target.src='';e.target.style.background='var(--surface)';}}/>
+                  onError={e=>{e.target.style.display='none';}}/>
                 <div style={{flex:1,minWidth:0}}>
                   <p style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{logo.name}</p>
                   <p style={{fontSize:10,color:'var(--dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{logo.url}</p>

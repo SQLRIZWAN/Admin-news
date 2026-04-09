@@ -39,8 +39,8 @@ def generate_tts(script: str, output_path: str, voice: str = 'en-US-GuyNeural') 
     Returns:
         List of dicts: [{word, start, duration}, ...]
     """
-    # Retry with fallback voice on failure
-    voices_to_try = [voice, 'en-US-GuyNeural', 'en-US-AriaNeural']
+    # Retry with fallback voices on failure (Hindi first, then English)
+    voices_to_try = [voice, 'hi-IN-MadhurNeural', 'hi-IN-SwaraNeural', 'en-US-GuyNeural', 'en-US-AriaNeural']
     seen = set()
     voices_to_try = [v for v in voices_to_try if not (v in seen or seen.add(v))]
 

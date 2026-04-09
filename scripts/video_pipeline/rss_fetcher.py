@@ -1,6 +1,7 @@
 """
-RSS feed fetcher — returns the most recent, unique news item from category feeds.
+RSS feed fetcher — returns the most recent, category-relevant news item.
 Uses requests for proper timeout + browser User-Agent (many feeds block feedparser's UA).
+Filters entries by category keywords so Kuwait-Jobs doesn't return BBC Business finance news.
 """
 
 import re
@@ -69,13 +70,29 @@ def _source_name_from_url(url: str) -> str:
     return 'KWT News'
 
 
-def get_latest_news(rss_feeds: list) -> dict | None:
+def _matches_keywords(item: dict, keywords: list) -> bool:
+    """Return True if item title or summary contains at least one keyword."""
+    if not keywords:
+        return True  # No filter — accept everything
+    text = (item['title'] + ' ' + item['summary']).lower()
+    return any(kw.lower() in text for kw in keywords)
+
+
+def get_latest_news(rss_feeds: list, filter_keywords: list = None) -> dict | None:
     """
-    Fetch RSS feeds in order and return the first valid, recent news item.
+    Fetch RSS feeds in order and return the first relevant, recent news item.
+
+    filter_keywords: list of words that must appear in title or summary.
+    If no entry matches the keywords, falls back to the first valid entry
+    (so the pipeline still runs and lets Gemini enrich it appropriately).
+
     Returns None if no feeds are available or all fail.
     """
     if not rss_feeds:
         return None
+
+    filter_keywords = filter_keywords or []
+    best_unfiltered = None  # Fallback if nothing matches keywords
 
     for feed_url in rss_feeds:
         try:
@@ -90,15 +107,28 @@ def get_latest_news(rss_feeds: list) -> dict | None:
                 feed.get('feed', {}).get('title', '') or _source_name_from_url(feed_url)
             )
 
-            for entry in entries[:8]:   # Check top 8 entries
+            for entry in entries[:10]:   # Check top 10 entries
                 item = _entry_to_item(entry, source_name)
-                if item['title'] and len(item['summary']) >= MIN_SUMMARY_LEN:
-                    print(f"   ✅ RSS: {source_name} — {item['title'][:60]}")
+                if not item['title'] or len(item['summary']) < MIN_SUMMARY_LEN:
+                    continue
+
+                if _matches_keywords(item, filter_keywords):
+                    print(f"   ✅ RSS match: {source_name} — {item['title'][:60]}")
                     return item
+
+                # Save first valid entry as fallback even if no keyword match
+                if best_unfiltered is None:
+                    best_unfiltered = item
 
         except Exception as e:
             print(f"   RSS error ({feed_url[:50]}): {e}")
             continue
+
+    # No keyword-matching entry found — use unfiltered fallback so Gemini can handle it
+    if best_unfiltered:
+        print(f"   ⚠️  No keyword match in RSS — using first valid entry as context for Gemini")
+        print(f"      Entry: {best_unfiltered['title'][:60]}")
+        return best_unfiltered
 
     print("   ⚠️  All RSS feeds returned no usable items")
     return None
