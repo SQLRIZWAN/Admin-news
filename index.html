@@ -13,6 +13,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://js.puter.com/v2/"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -149,56 +150,45 @@ try{ db.settings({experimentalForceLongPolling:true,merge:true}); }catch(e){}
 const CLOUDINARY = { cloudName:'debp1kjtm', uploadPreset:'sql_admin', folder:'sql_users', uploadUrl:'https://api.cloudinary.com/v1_1/debp1kjtm/auto/upload' };
 const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','footer'];
 
-// ── AI Config ─────────────────────────────────────────────────
-// Gemini key — stored under versioned key so old cached keys never interfere
-const _GK = 'AIzaSyAIIJ4rQn6P02x' + '-' + 'OvJV3RPzHqUCnoVr9XY';
-const _LS_KEY = 'kwt_gemini_v3';          // new name → browser always starts fresh
-localStorage.setItem(_LS_KEY, _GK);        // always write correct key on every load
-
+// ── AI Config (Puter.js — no API key needed) ──────────────────
 const AI_CFG = {
-  get aiKey(){ return localStorage.getItem(_LS_KEY)||_GK; },
   pixabayKey: '55334487-7e1fe11afb323913a5edf0ad7',
   pollinationsKey: 'pk_zbSQRgAuG5TdrCfD',
-  // Gemini models — v1beta supports google_search grounding for live news
-  models:[
-    {m:'gemini-2.5-flash',               v:'v1beta', search:true},
-    {m:'gemini-2.5-flash-preview-05-20', v:'v1beta', search:true},
-    {m:'gemini-2.0-flash',               v:'v1beta', search:true},
-    {m:'gemini-2.0-flash-lite',          v:'v1beta', search:true},
-    {m:'gemini-1.5-flash-latest',        v:'v1beta', search:false},
-  ],
-  base:'https://generativelanguage.googleapis.com/',
 };
 
+// Ordered best→fallback; Puter.js tries each until one succeeds
+const PUTER_MODELS = [
+  {id:'claude-3-7-sonnet',         label:'Claude 3.7 Sonnet'},
+  {id:'claude-3-5-sonnet',         label:'Claude 3.5 Sonnet'},
+  {id:'gpt-4o',                    label:'GPT-4o'},
+  {id:'gemini-2.0-flash',          label:'Gemini 2.0 Flash'},
+  {id:'gemini-1.5-pro',            label:'Gemini 1.5 Pro'},
+  {id:'deepseek-chat',             label:'DeepSeek Chat'},
+  {id:'gpt-4o-mini',               label:'GPT-4o Mini'},
+  {id:'claude-3-5-haiku',          label:'Claude 3.5 Haiku'},
+  {id:'llama-3.1-70b-instruct',    label:'Llama 3.1 70B'},
+  {id:'gemini-1.5-flash',          label:'Gemini 1.5 Flash'},
+  {id:'mistral-large',             label:'Mistral Large'},
+  {id:'deepseek-reasoner',         label:'DeepSeek Reasoner'},
+];
+
 const callAI = async (userPrompt) => {
-  const key = AI_CFG.aiKey;
-  let lastErr = null;
-  for(const {m,v,search} of AI_CFG.models){
+  for(const {id, label} of PUTER_MODELS){
     try{
-      const body = {
-        contents:[{role:'user',parts:[{text:userPrompt}]}],
-        generationConfig:{temperature:0.75,maxOutputTokens:4096},
-      };
-      if(search) body.tools=[{google_search:{}}];
-      const res = await fetch(`${AI_CFG.base}${v}/models/${m}:generateContent?key=${key}`,{
-        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
-      });
-      const data = await res.json();
-      if(data.error){
-        const msg = data.error.message||'';
-        // quota or not-found → try next model
-        if(data.error.code===429||/quota|rate.?limit|not found|not support/i.test(msg)){
-          lastErr=new Error(msg); continue;
-        }
-        throw new Error(msg||'Gemini error');
-      }
-      return data.candidates?.[0]?.content?.parts?.[0]?.text||'';
-    }catch(e){
-      lastErr=e;
-      if(!/quota|rate.?limit|not found|not support|429/i.test(e.message)) throw e;
-    }
+      const res = await Promise.race([
+        puter.ai.chat(userPrompt, {model: id}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),45000))
+      ]);
+      let text = '';
+      if(typeof res==='string') text=res;
+      else if(typeof res?.message?.content==='string') text=res.message.content;
+      else if(Array.isArray(res?.message?.content))
+        text=res.message.content.filter(b=>b.type==='text').map(b=>b.text).join('');
+      else if(res?.text) text=res.text;
+      if(text.trim()){ console.log(`✅ AI: ${label}`); return text; }
+    }catch(e){ console.warn(`⚠️ ${label}: ${e.message}`); continue; }
   }
-  throw lastErr||new Error('All models busy. Please try again in a minute.');
+  throw new Error('All AI models unavailable. Please try again.');
 };
 const callGemini = callAI;
 
@@ -1967,14 +1957,13 @@ const AutomationPage = ({toast}) => {
     // Firebase
     try{ await db.collection('news').limit(1).get(); upd({firebase:'ok'}); }
     catch(_){ upd({firebase:'error'}); }
-    // Gemini
+    // Puter.js AI
     try{
-      const key=AI_CFG.aiKey;
-      const r=await fetch(`${AI_CFG.base}v1beta/models/gemini-2.0-flash-lite:generateContent?key=${key}`,{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({contents:[{role:'user',parts:[{text:'ping'}]}],generationConfig:{maxOutputTokens:4}})
-      });
-      const d=await r.json(); upd({gemini:d.error?'error':'ok'});
+      const res=await Promise.race([
+        puter.ai.chat('ping',{model:'gpt-4o-mini'}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))
+      ]);
+      upd({gemini:res?'ok':'error'});
     }catch(_){ upd({gemini:'error'}); }
     // Pixabay
     try{
@@ -2121,7 +2110,7 @@ const AutomationPage = ({toast}) => {
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 20px'}}>
           {[
             {key:'firebase', label:'Firebase'},
-            {key:'gemini',   label:'Gemini AI'},
+            {key:'gemini',   label:'Puter.js AI'},
             {key:'pixabay',  label:'Pixabay'},
             {key:'pexels',   label:'Pexels'},
           ].map(({key,label})=>(
@@ -2792,12 +2781,8 @@ const getOrCreateSourceLogo = async (sourceName) => {
 
 const AINewsManager = ({toast, onBack}) => {
   const [tab,setTab] = useState('chat');
-  // API Key setup
-  const [apiKey,setApiKey] = useState(()=>localStorage.getItem(_LS_KEY)||_GK);
-  const [keyInput,setKeyInput] = useState('');
-  const [showKeySetup,setShowKeySetup] = useState(false);
   // Chat
-  const [msgs,setMsgs] = useState([{role:'ai',text:'👋 Hi! I\'m your AI news assistant powered by Gemini AI.\n\nI can:\n• Search the web for latest breaking news\n• Write complete professional articles\n• Generate relevant images\n• Save drafts for your review\n\nType what kind of news you want, or click a suggestion below!'}]);
+  const [msgs,setMsgs] = useState([{role:'ai',text:'👋 Hi! I\'m your AI news assistant powered by Puter.js AI.\n\nI can:\n• Search the web for latest breaking news\n• Write complete professional articles\n• Generate relevant images\n• Save drafts for your review\n\nType what kind of news you want, or click a suggestion below!'}]);
   const [chatInput,setChatInput] = useState('');
   const [chatBusy,setChatBusy] = useState(false);
   const chatEndRef = useRef(null);
@@ -2820,15 +2805,6 @@ const AINewsManager = ({toast, onBack}) => {
   const [videoResult,setVideoResult] = useState(null); // {url, blob, article}
   const [videoDur,setVideoDur] = useState(20);
   const videoTimerRef = useRef(null);
-
-  const saveApiKey = () => {
-    const k = keyInput.trim();
-    if(k.length < 10){ toast.add('Invalid key — too short','error'); return; }
-    localStorage.setItem(_LS_KEY, k);
-    setApiKey(k);
-    setShowKeySetup(false);
-    toast.add('API key saved! AI is ready.','ok');
-  };
 
   // ── Video generation ──────────────────────────────────────────
   const uploadVideoBlob = async (blob) => {
@@ -3147,34 +3123,6 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
     color:tab===t?'#050c18':'var(--muted)',
   });
 
-  if(showKeySetup) return (
-    <div className="fade-up" style={{maxWidth:480,margin:'40px auto'}}>
-      <div style={{textAlign:'center',marginBottom:24}}>
-        <div style={{width:56,height:56,borderRadius:16,background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'inline-flex',alignItems:'center',justifyContent:'center',marginBottom:14,boxShadow:'0 4px 24px rgba(99,102,241,.4)'}}>
-          <Ic n="sparkle" s={24} c="#fff"/>
-        </div>
-        <h1 style={{fontSize:22,fontWeight:800,marginBottom:6}}>Change Gemini API Key</h1>
-        <p style={{fontSize:13,color:'var(--muted)',lineHeight:1.6}}>Update your Google Gemini API key. Key is stored only in your browser.</p>
-      </div>
-      <div className="card" style={{padding:24}}>
-        <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',letterSpacing:'.06em',display:'block',marginBottom:8}}>GEMINI API KEY</label>
-        <input className="inp" value={keyInput} onChange={e=>setKeyInput(e.target.value)}
-          onKeyDown={e=>e.key==='Enter'&&saveApiKey()}
-          placeholder="AIza..." style={{marginBottom:14}}/>
-        <button className="btn btn-accent" onClick={saveApiKey} style={{width:'100%',padding:13,fontSize:14}}>
-          💾 Save Key
-        </button>
-        <p style={{fontSize:11,color:'var(--dim)',textAlign:'center',marginTop:12}}>
-          Get key at aistudio.google.com → Get API Key
-        </p>
-      </div>
-      <button style={{display:'block',margin:'12px auto 0',background:'none',border:'none',color:'var(--muted)',fontSize:12,cursor:'pointer',fontFamily:'Outfit'}}
-        onClick={()=>setShowKeySetup(false)}>
-        ← Back to AI Studio
-      </button>
-    </div>
-  );
-
   return (
     <div className="fade-up">
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
@@ -3189,11 +3137,8 @@ Return ONLY valid JSON (absolutely no markdown, no code blocks, raw JSON only):
         </div>
         <div style={{flex:1}}>
           <h1 style={{fontSize:18,fontWeight:800,lineHeight:1}}>AI News Studio</h1>
-          <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Gemini AI · Video · Voice-over</p>
+          <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Puter.js AI · Video · Voice-over</p>
         </div>
-        <button className="btn btn-ghost" style={{fontSize:11,padding:'6px 10px'}} onClick={()=>setShowKeySetup(true)}>
-          🔑 Key
-        </button>
       </div>
 
       {/* Tab Bar */}

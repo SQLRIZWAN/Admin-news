@@ -7,6 +7,7 @@ with title, summary, content, 30-sec script, keywords, etc.
 import os
 import re
 import json
+import time
 import requests
 
 GEMINI_BASE = 'https://generativelanguage.googleapis.com/'
@@ -18,12 +19,28 @@ MODELS = [
     {'m': 'gemini-1.5-flash-latest',        'v': 'v1beta', 'search': False},
 ]
 
+# Any of these words/phrases in the error message means: retryable (try next model)
+_RETRYABLE = (
+    'quota', 'rate', 'limit', 'high demand', 'overloaded',
+    'try again', 'temporarily', 'unavailable', 'capacity',
+    'resource exhausted', 'service unavailable',
+)
 
-def _call_gemini(prompt: str) -> str:
-    """Call Gemini API with google_search grounding. Returns raw text."""
+
+def _is_retryable(msg: str, code: int) -> bool:
+    m = msg.lower()
+    return code in (429, 503) or any(w in m for w in _RETRYABLE)
+
+
+def _call_gemini(prompt: str) -> str | None:
+    """
+    Call Gemini API with google_search grounding.
+    Returns raw text, or None if all models are unavailable (soft failure).
+    Raises only on hard errors (auth, bad request, etc.).
+    """
     key = os.environ['GEMINI_API_KEY']
 
-    for cfg in MODELS:
+    for i, cfg in enumerate(MODELS):
         body = {
             'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
             'generationConfig': {'temperature': 0.65, 'maxOutputTokens': 4096},
@@ -37,15 +54,26 @@ def _call_gemini(prompt: str) -> str:
                 json=body,
                 timeout=90,
             )
+
+            # Handle HTTP-level errors
+            if res.status_code in (429, 503):
+                print(f"   Model {cfg['m']} HTTP {res.status_code}, trying next...")
+                if i < len(MODELS) - 1:
+                    time.sleep(2)
+                continue
+
             data = res.json()
 
             if 'error' in data:
                 msg = data['error'].get('message', '')
                 code = data['error'].get('code', 0)
-                if code == 429 or any(w in msg.lower() for w in ('quota', 'rate', 'limit')):
-                    print(f"   Model {cfg['m']} quota hit, trying next...")
+                if _is_retryable(msg, code):
+                    print(f"   Model {cfg['m']} unavailable ({msg[:60]}), trying next...")
+                    if i < len(MODELS) - 1:
+                        time.sleep(2)
                     continue
-                raise Exception(f"Gemini API error: {msg}")
+                # Hard error (bad API key, malformed request, etc.) — raise immediately
+                raise Exception(f"Gemini API error [{code}]: {msg}")
 
             text = data.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '')
             if text:
@@ -55,11 +83,14 @@ def _call_gemini(prompt: str) -> str:
             print(f"   Model {cfg['m']} timeout, trying next...")
             continue
         except Exception as e:
-            if 'quota' in str(e).lower():
+            if _is_retryable(str(e), 0):
+                print(f"   Model {cfg['m']} retryable error, trying next...")
                 continue
             raise
 
-    raise Exception("All Gemini models failed or returned empty")
+    # All models exhausted — soft failure (pipeline will skip this item)
+    print("   ⚠️  All Gemini models unavailable — will skip this run")
+    return None
 
 
 def _parse_json(text: str) -> dict | None:
@@ -153,6 +184,11 @@ Return ONLY valid JSON (no markdown, no explanation):
 
     try:
         raw = _call_gemini(prompt)
+
+        if raw is None:
+            # All models unavailable — soft skip
+            return {'skip': True}
+
         data = _parse_json(raw)
 
         if not data:
@@ -179,4 +215,5 @@ Return ONLY valid JSON (no markdown, no explanation):
 
     except Exception as e:
         print(f"   ❌ Gemini script generation failed: {e}")
-        raise
+        # Return skip so pipeline exits cleanly instead of crashing
+        return {'skip': True}
