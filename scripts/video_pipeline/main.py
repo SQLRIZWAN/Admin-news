@@ -206,7 +206,9 @@ def run(category: str) -> bool:
             'sourceLogo': source_logo or '',
             'readTime':   f"{max(1, len(script_data['script'].split()) // 130)} min read",
             'isBreaking': False,
-            'mediaType':  'video',
+            # Use 'article' so the news feed query includes it.
+            # videoUrl field still holds the video — app can play it.
+            'mediaType':  'article',
         }
 
         news_id = post_news(article)

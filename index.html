@@ -1219,20 +1219,14 @@ const NewsManager = ({toast, initCat='all'}) => {
           </div>
         ) : filtered.map(n=>(
           <div key={n.id} className="row"
-            style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',
-              gap:12,opacity:n.hidden?0.45:1,transition:'opacity .2s'}}>
+            style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',gap:12}}>
 
             {/* Thumbnail */}
-            <div style={{width:56,height:56,borderRadius:12,background:'var(--surface2)',overflow:'hidden',flexShrink:0,position:'relative',border:'1px solid var(--border)'}}>
+            <div style={{width:56,height:56,borderRadius:12,background:'var(--surface2)',overflow:'hidden',flexShrink:0,border:'1px solid var(--border)'}}>
               {n.imageUrl
-                ? <img src={n.imageUrl} style={{width:'100%',height:'100%',objectFit:'cover',filter:n.hidden?'grayscale(1)':''}} loading="lazy"/>
+                ? <img src={n.imageUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} loading="lazy"/>
                 : <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}><Ic n="img" s={20} c="var(--dim)"/></div>
               }
-              {n.hidden && (
-                <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.55)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                  <Ic n="eyeoff" s={16} c="#fff"/>
-                </div>
-              )}
             </div>
 
             {/* Info */}
@@ -1244,7 +1238,7 @@ const NewsManager = ({toast, initCat='all'}) => {
                 <span style={{fontSize:11,color:'var(--dim)'}}>{timeAgo(n.timestamp)}</span>
                 <span style={{fontSize:10,color:'var(--muted)',background:'var(--surface2)',padding:'1px 6px',borderRadius:4,border:'1px solid var(--border)'}}>{n.category||'all'}</span>
                 {n.isBreaking && <span className="badge" style={{background:'rgba(248,113,113,.12)',color:'var(--danger)',border:'1px solid rgba(248,113,113,.25)',fontSize:9}}>⚡ BREAKING</span>}
-                {n.hidden && <span className="badge" style={{background:'rgba(100,116,139,.1)',color:'var(--muted)',border:'1px solid rgba(100,116,139,.2)',fontSize:9}}>HIDDEN</span>}
+                {n.videoUrl && <span className="badge" style={{background:'rgba(96,165,250,.1)',color:'#60a5fa',border:'1px solid rgba(96,165,250,.2)',fontSize:9}}>🎬 VIDEO</span>}
               </div>
             </div>
 
@@ -2263,6 +2257,92 @@ const AutomationPage = ({toast}) => {
               style={{flexShrink:0,padding:'8px 14px',borderRadius:9,border:'1.5px solid rgba(52,211,153,.4)',background:'rgba(52,211,153,.1)',color:'#34d399',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Outfit',display:'flex',alignItems:'center',gap:5}}>
               {fixing?<><span className="spinner" style={{width:11,height:11}}/> Publishing…</>:'📢 Publish All'}
             </button>
+          </div>
+        );
+      })()}
+
+      {/* ── Database Diagnostic ── */}
+      {(()=>{
+        const [dbStatus, setDbStatus] = useState(null);
+        const [testing, setTesting] = useState(false);
+
+        const testDb = async ()=>{
+          setTesting(true);
+          const results = [];
+          const tests = [
+            {name:'All news (no filter)',       fn:()=>db.collection('news').orderBy('timestamp','desc').limit(5).get()},
+            {name:'hidden==false + timestamp',  fn:()=>db.collection('news').where('hidden','==',false).orderBy('timestamp','desc').limit(5).get()},
+            {name:'published==true + timestamp',fn:()=>db.collection('news').where('published','==',true).orderBy('timestamp','desc').limit(5).get()},
+            {name:'isBreaking==true',           fn:()=>db.collection('news').where('isBreaking','==',true).limit(5).get()},
+            {name:'category+timestamp index',   fn:()=>db.collection('news').where('category','==','world').orderBy('timestamp','desc').limit(3).get()},
+          ];
+          for(const t of tests){
+            try{
+              const s = await t.fn();
+              results.push({name:t.name, ok:true, count:s.size, err:null});
+            }catch(e){
+              const indexUrl = e.message?.match(/https:\/\/console\.firebase[^\s]*/)?.[0]||null;
+              results.push({name:t.name, ok:false, count:0, err:e.message?.slice(0,120), indexUrl});
+            }
+          }
+          setDbStatus(results);
+          setTesting(false);
+        };
+
+        return(
+          <div style={{marginTop:14,padding:'14px',background:'var(--surface)',border:'1px solid var(--border2)',borderRadius:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+              <p style={{fontSize:12,fontWeight:700,color:'var(--text)',flex:1}}>🔬 Database Query Test</p>
+              <button onClick={testDb} disabled={testing}
+                style={{padding:'6px 14px',borderRadius:8,border:'1.5px solid var(--border2)',background:'var(--surface2)',color:'var(--muted)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Outfit',display:'flex',alignItems:'center',gap:5}}>
+                {testing?<><span className="spinner" style={{width:10,height:10}}/> Testing…</>:'▶ Run Test'}
+              </button>
+            </div>
+            <p style={{fontSize:11,color:'var(--dim)',marginBottom:dbStatus?10:0}}>Tests the Firestore queries your news app uses. If any fail with "index required", tap the Fix link.</p>
+            {dbStatus&&(
+              <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                {dbStatus.map((r,i)=>(
+                  <div key={i} style={{padding:'8px 10px',borderRadius:8,background:'var(--surface2)',border:`1px solid ${r.ok?'rgba(52,211,153,.3)':'rgba(248,113,113,.3)'}`}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:14}}>{r.ok?'✅':'❌'}</span>
+                      <span style={{fontSize:11,fontWeight:700,flex:1,color:'var(--text)'}}>{r.name}</span>
+                      {r.ok&&<span style={{fontSize:10,color:'#34d399',background:'rgba(52,211,153,.1)',padding:'2px 7px',borderRadius:99}}>{r.count} docs</span>}
+                    </div>
+                    {!r.ok&&(
+                      <div style={{marginTop:5}}>
+                        {r.err&&<p style={{fontSize:10,color:'#f87171',lineHeight:1.5}}>{r.err}</p>}
+                        {r.indexUrl?(
+                          <a href={r.indexUrl} target="_blank" rel="noreferrer"
+                            style={{display:'inline-block',marginTop:4,fontSize:11,fontWeight:700,color:'var(--accent)',background:'rgba(245,166,35,.1)',border:'1px solid rgba(245,166,35,.3)',borderRadius:6,padding:'4px 10px',textDecoration:'none'}}>
+                            🔧 Create Index in Firebase Console →
+                          </a>
+                        ):(
+                          <a href="https://console.firebase.google.com/project/kwt-news/firestore/indexes" target="_blank" rel="noreferrer"
+                            style={{display:'inline-block',marginTop:4,fontSize:11,fontWeight:700,color:'var(--accent)',background:'rgba(245,166,35,.1)',border:'1px solid rgba(245,166,35,.3)',borderRadius:6,padding:'4px 10px',textDecoration:'none'}}>
+                            🔧 Open Firestore Indexes →
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {dbStatus.every(r=>r.ok)&&(
+                  <div style={{padding:'10px',background:'rgba(52,211,153,.08)',borderRadius:8,textAlign:'center'}}>
+                    <p style={{fontSize:12,color:'#34d399',fontWeight:700}}>✅ All queries work! If news still doesn't show, run "📢 Publish All" above.</p>
+                  </div>
+                )}
+                {dbStatus.some(r=>!r.ok)&&(
+                  <div style={{padding:'10px',background:'rgba(248,113,113,.06)',borderRadius:8}}>
+                    <p style={{fontSize:11,color:'#f87171',fontWeight:700,marginBottom:4}}>⚠️ Some queries require Firestore indexes</p>
+                    <p style={{fontSize:11,color:'var(--muted)',lineHeight:1.7}}>
+                      1. Tap each "🔧 Create Index" link above → creates index automatically<br/>
+                      2. Wait ~2 minutes for index to build<br/>
+                      3. Run this test again to confirm ✅
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
