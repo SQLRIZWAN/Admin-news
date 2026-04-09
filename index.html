@@ -2307,6 +2307,120 @@ const SettingsPage = ({user,toast}) => (
   </div>
 );
 
+// ── LOGOS MANAGER ────────────────────────────────────────────
+const LogosManager = ({toast}) => {
+  const [logos,  setLogos]  = useState([]);
+  const [loading,setLoading]= useState(true);
+  const [form,   setForm]   = useState({name:'',url:''});
+  const [saving, setSaving] = useState(false);
+  const [preview,setPreview]= useState('');
+
+  useEffect(()=>{
+    const u=db.collection('logos').orderBy('name').onSnapshot(s=>{
+      setLogos(s.docs.map(d=>({id:d.id,...d.data()})));
+      setLoading(false);
+    },()=>setLoading(false));
+    return ()=>u();
+  },[]);
+
+  const add = async()=>{
+    const name=form.name.trim(), url=form.url.trim();
+    if(!name||!url){ toast.add('Both name and URL required','error'); return; }
+    if(!url.startsWith('http')){ toast.add('URL must start with http','error'); return; }
+    setSaving(true);
+    try{
+      await db.collection('logos').add({name,url,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      setForm({name:'',url:''}); setPreview('');
+      toast.add('✅ Logo added!','ok');
+    }catch(e){ toast.add('Error: '+e.message,'error'); }
+    setSaving(false);
+  };
+
+  const del = async(id,name)=>{
+    if(!confirm(`Delete logo for "${name}"?`)) return;
+    try{
+      await db.collection('logos').doc(id).delete();
+      toast.add('Deleted','ok');
+    }catch(e){ toast.add('Error: '+e.message,'error'); }
+  };
+
+  return (
+    <div className="fade-up">
+      <div style={{marginBottom:20}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
+          <div style={{width:38,height:38,borderRadius:12,background:'linear-gradient(135deg,#1a2d4a,#243a59)',border:'1px solid var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <span style={{fontSize:18}}>🏷️</span>
+          </div>
+          <div>
+            <h1 style={{fontSize:20,fontWeight:800,letterSpacing:'-.02em',lineHeight:1}}>Source Logos</h1>
+            <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>Logo URLs for news sources — shown in auto-posted articles</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Add new logo */}
+      <div className="card" style={{padding:18,marginBottom:16}}>
+        <p style={{fontWeight:700,fontSize:13,marginBottom:12}}>➕ Add Source Logo</p>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <input className="inp" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}
+            placeholder="Source name  e.g. BBC News, Al Jazeera, Kuwait Times"/>
+          <div style={{display:'flex',gap:8}}>
+            <input className="inp" style={{flex:1}} value={form.url}
+              onChange={e=>{ setForm(p=>({...p,url:e.target.value})); setPreview(e.target.value.trim()); }}
+              placeholder="Logo image URL  https://..."/>
+            {preview&&(
+              <img src={preview} alt="preview"
+                style={{width:44,height:44,borderRadius:8,objectFit:'contain',border:'1px solid var(--border)',background:'#fff',flexShrink:0}}
+                onError={e=>e.target.style.display='none'}/>
+            )}
+          </div>
+          <button className="btn btn-accent" onClick={add} disabled={saving} style={{padding:'11px',fontWeight:700}}>
+            {saving?'Saving…':'💾 Add Logo'}
+          </button>
+        </div>
+        <p style={{fontSize:10,color:'var(--dim)',marginTop:10,lineHeight:1.6}}>
+          Tip: Use a direct image URL from the news website, Wikipedia, or upload to Cloudinary first.
+          Source name must match what the pipeline uses (e.g. "BBC News", "Reuters", "Al Jazeera").
+        </p>
+      </div>
+
+      {/* Logos list */}
+      <div className="card" style={{padding:18}}>
+        <div style={{display:'flex',alignItems:'center',marginBottom:14}}>
+          <p style={{fontWeight:700,fontSize:13}}>📋 All Logos</p>
+          <span style={{marginLeft:'auto',fontSize:11,color:'var(--dim)',background:'var(--surface2)',padding:'2px 8px',borderRadius:99}}>{logos.length} sources</span>
+        </div>
+        {loading?(
+          <div style={{textAlign:'center',padding:24}}><span className="spinner" style={{width:20,height:20}}/></div>
+        ):logos.length===0?(
+          <div style={{textAlign:'center',padding:28}}>
+            <div style={{fontSize:32,marginBottom:8}}>🖼️</div>
+            <p style={{fontSize:13,color:'var(--muted)'}}>No logos yet</p>
+            <p style={{fontSize:11,color:'var(--dim)',marginTop:4}}>Add logos above — they'll appear next to news sources in auto-posts</p>
+          </div>
+        ):(
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {logos.map(logo=>(
+              <div key={logo.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--surface2)',borderRadius:10,border:'1px solid var(--border)'}}>
+                <img src={logo.url} alt={logo.name} style={{width:36,height:36,borderRadius:8,objectFit:'contain',background:'#fff',border:'1px solid var(--border)',flexShrink:0}}
+                  onError={e=>{e.target.src='';e.target.style.background='var(--surface)';}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{logo.name}</p>
+                  <p style={{fontSize:10,color:'var(--dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{logo.url}</p>
+                </div>
+                <button onClick={()=>del(logo.id,logo.name)}
+                  style={{background:'rgba(248,113,113,.12)',border:'1px solid rgba(248,113,113,.3)',color:'#f87171',borderRadius:8,padding:'5px 10px',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Outfit',flexShrink:0}}>
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── CATEGORY MANAGER ─────────────────────────────────────────
 const CategoryManager = ({toast, onNavigate}) => {
   const [counts,setCounts] = useState({});
@@ -3473,6 +3587,7 @@ const PAGES = [
   {id:'news',label:'News',icon:'news'},
   {id:'ai',label:'AI',icon:'sparkle'},
   {id:'automation',label:'Auto',icon:'bot'},
+  {id:'logos',label:'Logos',icon:'tag'},
   {id:'categories',label:'Categories',icon:'tag'},
   {id:'ads',label:'Ads',icon:'ads'},
   {id:'users',label:'Users',icon:'users'},
@@ -3509,6 +3624,7 @@ const Layout = ({user,onLogout}) => {
       case 'users': return <UsersManager {...p}/>;
       case 'notifications': return <PushNotifs {...p}/>;
       case 'automation': return <AutomationPage {...p}/>;
+      case 'logos': return <LogosManager {...p}/>;
       case 'settings': return <SettingsPage user={user} {...p}/>;
       default: return <Dashboard/>;
     }

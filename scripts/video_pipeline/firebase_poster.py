@@ -135,13 +135,33 @@ def post_news(article: dict) -> str:
     db = _get_db()
     ts = firestore.SERVER_TIMESTAMP
     doc = {
-        **article,
-        'timestamp': ts,
-        'views': 0,
-        'likes': 0,
+        # Article fields
+        'title':        article.get('title', ''),
+        'summary':      article.get('summary', ''),
+        'content':      article.get('content', ''),
+        'videoUrl':     article.get('videoUrl', ''),
+        'thumbnail':    article.get('thumbnail', ''),
+        'imageUrl':     article.get('imageUrl', ''),
+        'category':     article.get('category', ''),
+        'source':       article.get('source', 'KWT News'),
+        'sourceLogo':   article.get('sourceLogo', ''),
+        'readTime':     article.get('readTime', '1 min read'),
+        'mediaType':    article.get('mediaType', 'video'),
+        'isBreaking':   article.get('isBreaking', False),
+        # Always published immediately, visible in app
+        'hidden':       False,
+        'published':    True,
+        'status':       'published',
+        # Auto-post metadata
+        'aiGenerated':  True,
+        'autoPosted':   True,
+        # Counters
+        'views':        0,
+        'likes':        0,
         'commentCount': 0,
-        'hidden': False,
-        'aiGenerated': True,
+        # Timestamp
+        'timestamp':    ts,
+        'createdAt':    ts,
     }
     ref = db.collection('news').add(doc)
     return ref[1].id
