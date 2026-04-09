@@ -64,6 +64,29 @@ def run(category: str) -> bool:
         write_automation_log(category, 'skipped', reason='automation disabled')
         return False
 
+    # ── 1b. Anti-rapid-fire: skip if we posted this category in the last 25 min ─
+    # This prevents parallel runs (e.g. news-watcher + run-all) from posting
+    # the same article twice within minutes of each other.
+    try:
+        recent_same_cat = get_recent_news(category, days=1)
+        if recent_same_cat:
+            from datetime import datetime, timezone, timedelta
+            last_post_ts = recent_same_cat[0].get('timestamp')
+            if last_post_ts:
+                if hasattr(last_post_ts, 'ToDatetime'):
+                    last_post_ts = last_post_ts.ToDatetime()
+                elif hasattr(last_post_ts, 'toDatetime'):
+                    last_post_ts = last_post_ts.toDatetime()
+                if last_post_ts.tzinfo is None:
+                    last_post_ts = last_post_ts.replace(tzinfo=timezone.utc)
+                age_min = (datetime.now(timezone.utc) - last_post_ts).total_seconds() / 60
+                if age_min < 25:
+                    print(f"⏱️   Last post was {age_min:.0f} min ago — skipping to prevent rapid duplicate.")
+                    write_automation_log(category, 'skipped', reason=f'posted {age_min:.0f}min ago (anti-rapid-fire)')
+                    return False
+    except Exception as e:
+        print(f"   Anti-rapid-fire check skipped: {e}")
+
     # ── 2. Fetch latest news from RSS ────────────────────────────────────────
     print("\n📡  Step 1 — Fetching RSS...")
     news_item = get_latest_news(

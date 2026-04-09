@@ -12,27 +12,35 @@ import edge_tts
 
 def _to_ssml(script: str, voice: str) -> str:
     """
-    Wrap the script in SSML for more natural, human-sounding speech.
-    - Adds natural pauses at punctuation
-    - Slight speed reduction (-8%) for clearer news delivery
-    - Emphasis on sentence starts
-    Works with Edge TTS voices including hi-IN neural voices.
+    Wrap the script in SSML for natural, human news-anchor sounding speech.
+    Uses mstts:express-as style="newscast-casual" for hi-IN voices.
+    Falls back to prosody adjustments if express-as is not supported.
     """
-    # Escape XML special characters
+    # Escape XML special characters first
     text = script.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-    # Add pauses at sentence boundaries
-    text = re.sub(r'([।\.!?])\s+', r'\1<break time="450ms"/> ', text)
-    text = re.sub(r'([,،])\s+', r'\1<break time="200ms"/> ', text)
+    # Natural pauses at Hindi/English sentence boundaries
+    text = re.sub(r'([।\.!?])\s+', r'\1<break time="400ms"/> ', text)
+    text = re.sub(r'([,،;])\s+',   r'\1<break time="180ms"/> ', text)
 
-    # Wrap in SSML with prosody for natural pace
-    ssml = (
-        f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
-        f'xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="hi-IN">'
-        f'<voice name="{voice}">'
-        f'<prosody rate="-8%" pitch="-2%">'
+    # Use express-as newscast-casual style for more human-like delivery
+    # This style is available on hi-IN-MadhurNeural and hi-IN-SwaraNeural
+    inner = (
+        f'<mstts:express-as style="newscast-casual" styledegree="1.5">'
+        f'<prosody rate="-5%" pitch="-1%">'
         f'{text}'
         f'</prosody>'
+        f'</mstts:express-as>'
+    )
+
+    # Detect language for xml:lang
+    lang = 'hi-IN' if 'hi-IN' in voice or 'hi-in' in voice.lower() else 'en-US'
+
+    ssml = (
+        f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
+        f'xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="{lang}">'
+        f'<voice name="{voice}">'
+        f'{inner}'
         f'</voice>'
         f'</speak>'
     )

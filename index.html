@@ -713,7 +713,7 @@ const CATEGORIES = [
   {value:'funny-news-meme',label:'😂 Funny & Memes', color:'#fbbf24'},
 ];
 
-const BLANK = {title:'',summary:'',content:'',imageUrl:'',thumbnail:'',category:'kuwait',source:'KWT News',sourceLogo:'',readTime:'3 min read',isBreaking:false,mediaType:'image'};
+const BLANK = {title:'',summary:'',content:'',imageUrl:'',thumbnail:'',category:'kuwait',source:'KWT News',sourceLogo:'',readTime:'3 min read',isBreaking:false,mediaType:'image',published:true,hidden:false,status:'published'};
 
 // ── Logo Picker ────────────────────────────────────────────────
 const LogoPicker = ({value, onSelect}) => {
@@ -871,7 +871,7 @@ const NewsForm = ({editing, initialForm, onSave, onCancel, toast}) => {
         await db.collection('news').doc(editing).update(d);
         toast.add('Article updated successfully!');
       } else {
-        const d={...form, timestamp:firebase.firestore.FieldValue.serverTimestamp(), views:0, likes:0, commentCount:0};
+        const d={...form, published:true, hidden:false, status:'published', timestamp:firebase.firestore.FieldValue.serverTimestamp(), views:0, likes:0, commentCount:0};
         await db.collection('news').add(d);
         toast.add('Article published successfully!');
       }
@@ -2231,50 +2231,38 @@ const AutomationPage = ({toast}) => {
         )}
       </div>
 
-      {/* ── Fix Hidden Articles ── */}
+      {/* ── Publish All Articles ── */}
       {(()=>{
-        const [hiddenCount, setHiddenCount] = useState(null);
         const [fixing, setFixing] = useState(false);
-        const checkHidden = async ()=>{
-          try{
-            const s = await db.collection('news').where('hidden','==',true).get();
-            const s2 = await db.collection('news').where('published','==',false).get();
-            const ids = new Set([...s.docs.map(d=>d.id),...s2.docs.map(d=>d.id)]);
-            setHiddenCount(ids.size);
-          }catch(e){ setHiddenCount(0); }
-        };
-        const fixHidden = async ()=>{
+        const publishAll = async ()=>{
+          if(!confirm('This will set published:true and hidden:false on ALL news articles. Continue?')) return;
           setFixing(true);
           try{
-            const s1 = await db.collection('news').where('hidden','==',true).get();
-            const s2 = await db.collection('news').where('published','==',false).get();
-            const allDocs = [...s1.docs, ...s2.docs];
-            const seen = new Set();
-            const unique = allDocs.filter(d=>{ if(seen.has(d.id)) return false; seen.add(d.id); return true; });
-            // Process in batches of 400
-            for(let i=0;i<unique.length;i+=400){
+            // Get all news articles
+            const all = await db.collection('news').get();
+            const docs = all.docs;
+            // Batch update all in groups of 400
+            for(let i=0;i<docs.length;i+=400){
               const batch = db.batch();
-              unique.slice(i,i+400).forEach(d=>batch.update(d.ref,{hidden:false,published:true,status:'published'}));
+              docs.slice(i,i+400).forEach(d=>batch.update(d.ref,{
+                hidden:false, published:true, status:'published'
+              }));
               await batch.commit();
             }
-            toast.show(`✅ Published ${unique.length} hidden articles!`,'success');
-            setHiddenCount(0);
+            toast.show(`✅ Published all ${docs.length} articles!`,'success');
           }catch(e){ toast.show('Error: '+e.message,'error'); }
           setFixing(false);
         };
-        React.useEffect(()=>{ checkHidden(); },[]);
         return(
-          <div style={{marginTop:14,padding:'12px 14px',background:'rgba(248,113,113,.05)',border:'1px solid rgba(248,113,113,.2)',borderRadius:12,display:'flex',alignItems:'center',gap:12}}>
+          <div style={{marginTop:14,padding:'12px 14px',background:'rgba(52,211,153,.05)',border:'1px solid rgba(52,211,153,.2)',borderRadius:12,display:'flex',alignItems:'center',gap:12}}>
             <div style={{flex:1}}>
-              <p style={{fontSize:12,fontWeight:700,color:'#f87171',marginBottom:2}}>🔒 Hidden Articles</p>
-              <p style={{fontSize:11,color:'var(--muted)'}}>{hiddenCount===null?'Checking…':hiddenCount===0?'All articles are published ✅':`${hiddenCount} articles are hidden or unpublished`}</p>
+              <p style={{fontSize:12,fontWeight:700,color:'#34d399',marginBottom:2}}>📢 Publish All Articles</p>
+              <p style={{fontSize:11,color:'var(--muted)'}}>Sets published:true + hidden:false on every article so they appear in your news app.</p>
             </div>
-            {(hiddenCount===null||hiddenCount>0)&&(
-              <button onClick={hiddenCount===null?checkHidden:fixHidden} disabled={fixing}
-                style={{flexShrink:0,padding:'8px 14px',borderRadius:9,border:'1.5px solid rgba(248,113,113,.4)',background:'rgba(248,113,113,.1)',color:'#f87171',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Outfit',display:'flex',alignItems:'center',gap:5}}>
-                {fixing?<><span className="spinner" style={{width:11,height:11}}/> Fixing…</>:hiddenCount===null?'Check':'Publish All'}
-              </button>
-            )}
+            <button onClick={publishAll} disabled={fixing}
+              style={{flexShrink:0,padding:'8px 14px',borderRadius:9,border:'1.5px solid rgba(52,211,153,.4)',background:'rgba(52,211,153,.1)',color:'#34d399',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Outfit',display:'flex',alignItems:'center',gap:5}}>
+              {fixing?<><span className="spinner" style={{width:11,height:11}}/> Publishing…</>:'📢 Publish All'}
+            </button>
           </div>
         );
       })()}

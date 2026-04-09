@@ -148,38 +148,58 @@ def download_clips(keywords: list, dest_dir: str, max_clips: int = 5) -> list:
 
 def get_pixabay_image(keyword: str) -> str:
     """
-    Get a Pixabay image URL for use as thumbnail.
-    Returns a direct image URL (not downloaded, just the URL).
+    Get a news-relevant Pixabay image URL for use as thumbnail.
+    Tries multiple keyword variations to avoid unrelated images.
     """
     key = os.environ.get('PIXABAY_API_KEY', '')
     if not key:
-        return f"https://placehold.co/1280x720/1a2d4a/e8edf5?text={requests.utils.quote(keyword)}"
+        return f"https://placehold.co/1280x720/1a2d4a/e8edf5?text=News"
 
-    try:
-        res = requests.get(
-            PIXABAY_IMG_BASE,
-            params={
-                'key': key,
-                'q': keyword[:80],
-                'image_type': 'photo',
-                'safesearch': 'true',
-                'orientation': 'horizontal',
-                'min_width': 800,
-                'per_page': 5,
-                'order': 'latest',
-            },
-            timeout=15,
-        )
-        data = res.json()
-        hits = data.get('hits', [])
-        if hits:
-            return hits[0].get('largeImageURL') or hits[0].get('webformatURL', '')
-    except Exception as e:
-        print(f"   Pixabay image error: {e}")
-
-    # Retry with shorter keyword
-    words = keyword.split()
+    # Build a list of keyword variations to try, from most specific to most generic
+    words = keyword.strip().split()
+    candidates = [keyword]
     if len(words) > 2:
-        return get_pixabay_image(' '.join(words[:2]))
+        candidates.append(' '.join(words[:2]))  # first 2 words
+    if len(words) > 1:
+        candidates.append(words[0])             # first word only
+    # Always try topic + "news" as final attempt before giving up
+    candidates.append(f"{words[0]} news" if words else 'news')
 
-    return f"https://placehold.co/1280x720/1a2d4a/e8edf5?text=News"
+    # Categories that often cause wrong images — add "news" to force editorial results
+    _NEWS_BOOST = ['cat','dog','puppy','kitten','baby','food','flower','animal']
+    base = keyword.lower()
+    needs_boost = any(w in base for w in _NEWS_BOOST)
+
+    for q in candidates:
+        if needs_boost:
+            q = q + ' news'
+        try:
+            res = requests.get(
+                PIXABAY_IMG_BASE,
+                params={
+                    'key': key,
+                    'q': q[:80],
+                    'image_type': 'photo',
+                    'safesearch': 'true',
+                    'orientation': 'horizontal',
+                    'min_width': 800,
+                    'per_page': 8,
+                    'order': 'popular',
+                    'editors_choice': 'false',
+                },
+                timeout=15,
+            )
+            data = res.json()
+            hits = data.get('hits', [])
+            if hits:
+                url = hits[0].get('largeImageURL') or hits[0].get('webformatURL', '')
+                if url:
+                    print(f"   Thumbnail: '{q}' → found")
+                    return url
+        except Exception as e:
+            print(f"   Pixabay image error ({q}): {e}")
+            continue
+
+    # Final fallback: dark news-styled placeholder
+    label = keyword.replace(' ', '+')[:30]
+    return f"https://placehold.co/1280x720/0f2a45/60a5fa?text=KWT+News"
