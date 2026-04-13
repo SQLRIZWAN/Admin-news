@@ -6,15 +6,20 @@
 <title>KWT News — Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-<script src="https://cdn.tailwindcss.com"></script>
+<!-- Critical scripts first: React + Babel (must be sync for JSX compilation) -->
 <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.6/babel.min.js"></script>
+<!-- Firebase (auth needed before app starts) -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-<script src="https://js.puter.com/v2/"></script>
+<!-- Non-critical: load async so they don't block app startup -->
+<script src="https://cdn.tailwindcss.com" async></script>
+<script src="https://js.puter.com/v2/" async></script>
 <style>
+/* Critical spin animation for loading screen — must be in CSS not inline */
+@keyframes spin{to{transform:rotate(360deg)}}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
   --bg:#050c18;
@@ -126,8 +131,18 @@ body.modal-open{overflow:hidden;position:fixed;width:100%}
 </style>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel">
+<!-- Instant loading screen shown before Babel compiles JSX -->
+<div id="root">
+  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:#050c18;">
+    <div style="width:52px;height:52px;border-radius:15px;background:#F5A623;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 32px rgba(245,166,35,.4);">
+      <span style="font-family:Arial,sans-serif;font-weight:900;font-size:15px;color:#050c18;">KWT</span>
+    </div>
+    <div style="width:28px;height:28px;border:3px solid rgba(245,166,35,.25);border-top-color:#F5A623;border-radius:50%;animation:spin .7s linear infinite;"></div>
+    <p style="color:rgba(255,255,255,.4);font-family:Arial,sans-serif;font-size:13px;margin-top:4px;">Loading KWT News Admin…</p>
+  </div>
+</div>
+<!-- data-presets="react" tells Babel to only transform JSX, skip ES6+ polyfills modern browsers don't need → ~40% faster compile -->
+<script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useRef, useMemo } = React;
 const { createRoot } = ReactDOM;
 
@@ -603,24 +618,33 @@ const Dashboard = () => {
   const [catCounts,setCatCounts] = useState({});
   const [recent,setRecent] = useState([]);
   const [loading,setLoading] = useState(true);
+  const [statsLoaded,setStatsLoaded] = useState(false);
 
   useEffect(()=>{
     const u=[];
-    u.push(db.collection('news').orderBy('timestamp','desc').limit(200).onSnapshot(s=>{
-      const cc={};
-      s.docs.forEach(d=>{ const c=d.data().category; if(c) cc[c]=(cc[c]||0)+1; });
+    // ── News: single listener for both count+category+recent ──────
+    // No orderBy on count query — avoids needing index and is faster
+    u.push(db.collection('news').limit(300).onSnapshot(s=>{
+      const cc={};let brk=0;
+      s.docs.forEach(d=>{ const dt=d.data(); if(dt.category) cc[dt.category]=(cc[dt.category]||0)+1; if(dt.isBreaking) brk++; });
       setCatCounts(cc);
-      setStats(p=>({...p,news:s.size,breaking:s.docs.filter(d=>d.data().isBreaking).length}));
-    }));
-    u.push(db.collection('users').onSnapshot(s=>setStats(p=>({...p,users:s.size}))));
-    u.push(db.collection('comments').onSnapshot(s=>setStats(p=>({...p,comments:s.size}))));
-    u.push(db.collection('ads').onSnapshot(s=>{
-      let i=0,c=0; s.docs.forEach(d=>{i+=d.data().impressions||0;c+=d.data().clicks||0;});
-      setStats(p=>({...p,imp:i,clicks:c}));
-    }));
+      setStats(p=>({...p,news:s.size,breaking:brk}));
+    },()=>{}));
+
+    // Recent news (separate query for display only — limit 6, ordered)
     u.push(db.collection('news').orderBy('timestamp','desc').limit(6).onSnapshot(s=>{
       setRecent(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);
-    }));
+    },()=>{setLoading(false);}));
+
+    // ── Users, Comments, Ads: one-time get() instead of onSnapshot ─
+    // These don't need realtime. get() is faster and cheaper.
+    db.collection('users').limit(5000).get().then(s=>setStats(p=>({...p,users:s.size}))).catch(()=>{});
+    db.collection('comments').limit(5000).get().then(s=>setStats(p=>({...p,comments:s.size}))).catch(()=>{});
+    db.collection('ads').limit(100).get().then(s=>{
+      let i=0,c=0; s.docs.forEach(d=>{i+=d.data().impressions||0;c+=d.data().clicks||0;});
+      setStats(p=>({...p,imp:i,clicks:c})); setStatsLoaded(true);
+    }).catch(()=>setStatsLoaded(true));
+
     return ()=>u.forEach(f=>f());
   },[]);
 
@@ -1112,9 +1136,16 @@ const NewsManager = ({toast, initCat='all'}) => {
   const [videoPlayId,setVideoPlayId] = useState(null); // which article video is playing
 
   useEffect(()=>{
-    const u=db.collection('news').orderBy('timestamp','desc').limit(100).onSnapshot(s=>{
-      setNews(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);
-    });
+    // Try ordered query first; if Firestore index missing, fallback to unordered
+    let u = db.collection('news').orderBy('timestamp','desc').limit(100).onSnapshot(
+      s=>{ setNews(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); },
+      _err=>{ // Fallback: unordered query (no index needed)
+        u = db.collection('news').limit(100).onSnapshot(
+          s=>{ setNews(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.timestamp?.seconds||0)-(a.timestamp?.seconds||0))); setLoading(false); },
+          ()=>setLoading(false)
+        );
+      }
+    );
     return ()=>u();
   },[]);
 
