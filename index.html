@@ -270,6 +270,9 @@ const Ic = ({n,s=18,c='currentColor'}) => {
     mail:<><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></>,
     bot:<><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><circle cx="8" cy="16" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="16" r="1" fill="currentColor" stroke="none"/></>,
     sparkle:<><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3z"/></>,
+    download:<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
+    play:<><polygon points="5 3 19 12 5 21 5 3"/></>,
+    video:<><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></>,
   };
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{p[n]}</svg>;
 };
@@ -603,7 +606,7 @@ const Dashboard = () => {
 
   useEffect(()=>{
     const u=[];
-    u.push(db.collection('news').onSnapshot(s=>{
+    u.push(db.collection('news').orderBy('timestamp','desc').limit(200).onSnapshot(s=>{
       const cc={};
       s.docs.forEach(d=>{ const c=d.data().category; if(c) cc[c]=(cc[c]||0)+1; });
       setCatCounts(cc);
@@ -1105,9 +1108,11 @@ const NewsManager = ({toast, initCat='all'}) => {
   const [confirm,setConfirm] = useState(null);
   const [search,setSearch] = useState('');
   const [cat,setCat] = useState(initCat);
+  const [statusFilter,setStatusFilter] = useState('published'); // 'published' | 'draft' | 'all'
+  const [videoPlayId,setVideoPlayId] = useState(null); // which article video is playing
 
   useEffect(()=>{
-    const u=db.collection('news').orderBy('timestamp','desc').limit(50).onSnapshot(s=>{
+    const u=db.collection('news').orderBy('timestamp','desc').limit(100).onSnapshot(s=>{
       setNews(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);
     });
     return ()=>u();
@@ -1137,8 +1142,10 @@ const NewsManager = ({toast, initCat='all'}) => {
     const q=search.toLowerCase();
     const matchQ=!q||n.title?.toLowerCase().includes(q);
     const matchC=cat==='all'||n.category===cat;
-    return matchQ&&matchC;
-  }),[news,search,cat]);
+    const isDraft = n.hidden===true || n.status==='draft' || (n.published===false && n.aiGenerated===true);
+    const matchS = statusFilter==='all' || (statusFilter==='published'&&!isDraft) || (statusFilter==='draft'&&isDraft);
+    return matchQ&&matchC&&matchS;
+  }),[news,search,cat,statusFilter]);
 
   // ── Full-screen form view ──
   if(view==='form') return (
@@ -1161,7 +1168,7 @@ const NewsManager = ({toast, initCat='all'}) => {
         <div>
           <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>News</h1>
           <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>
-            {news.length} articles · {news.filter(n=>n.isBreaking).length} breaking
+            {news.filter(n=>!(n.hidden===true||n.status==='draft'||(n.published===false&&n.aiGenerated===true))).length} published · {news.filter(n=>n.hidden===true||n.status==='draft'||(n.published===false&&n.aiGenerated===true)).length} drafts
           </p>
         </div>
         <button className="btn btn-accent" style={{padding:'11px 20px',gap:8,fontSize:14}} onClick={openAdd}>
@@ -1177,6 +1184,19 @@ const NewsManager = ({toast, initCat='all'}) => {
           </div>
           <input className="inp" placeholder="Search articles by title…" value={search}
             onChange={e=>setSearch(e.target.value)} style={{paddingLeft:40}}/>
+        </div>
+
+        {/* Status filter */}
+        <div style={{display:'flex',gap:6,marginBottom:2}}>
+          {[{v:'published',label:'✅ Published'},{v:'draft',label:'📝 Drafts'},{v:'all',label:'📋 All'}].map(({v,label})=>(
+            <button key={v} onClick={()=>setStatusFilter(v)}
+              style={{padding:'6px 14px',borderRadius:8,fontSize:12,fontWeight:700,border:'1.5px solid',cursor:'pointer',transition:'all .15s',whiteSpace:'nowrap',
+                background:statusFilter===v?'var(--accent)':'transparent',
+                color:statusFilter===v?'#050c18':'var(--muted)',
+                borderColor:statusFilter===v?'var(--accent)':'var(--border)'}}>
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Category filter */}
@@ -1218,15 +1238,18 @@ const NewsManager = ({toast, initCat='all'}) => {
             </button>
           </div>
         ) : filtered.map(n=>(
-          <div key={n.id} className="row"
-            style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',gap:12}}>
+          <React.Fragment key={n.id}>
+          <div className="row"
+            style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',gap:12,
+              background:n.hidden||n.status==='draft'?'rgba(251,191,36,.03)':'transparent'}}>
 
             {/* Thumbnail */}
-            <div style={{width:56,height:56,borderRadius:12,background:'var(--surface2)',overflow:'hidden',flexShrink:0,border:'1px solid var(--border)'}}>
+            <div style={{width:56,height:56,borderRadius:12,background:'var(--surface2)',overflow:'hidden',flexShrink:0,border:'1px solid var(--border)',position:'relative'}}>
               {n.imageUrl
                 ? <img src={n.imageUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} loading="lazy"/>
-                : <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}><Ic n="img" s={20} c="var(--dim)"/></div>
+                : <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}><Ic n={n.videoUrl?'video':'img'} s={20} c="var(--dim)"/></div>
               }
+              {(n.hidden||n.status==='draft')&&<div style={{position:'absolute',bottom:0,left:0,right:0,background:'rgba(251,191,36,.85)',fontSize:8,fontWeight:800,textAlign:'center',color:'#050c18',padding:'1px 0'}}>DRAFT</div>}
             </div>
 
             {/* Info */}
@@ -1239,11 +1262,33 @@ const NewsManager = ({toast, initCat='all'}) => {
                 <span style={{fontSize:10,color:'var(--muted)',background:'var(--surface2)',padding:'1px 6px',borderRadius:4,border:'1px solid var(--border)'}}>{n.category||'all'}</span>
                 {n.isBreaking && <span className="badge" style={{background:'rgba(248,113,113,.12)',color:'var(--danger)',border:'1px solid rgba(248,113,113,.25)',fontSize:9}}>⚡ BREAKING</span>}
                 {n.videoUrl && <span className="badge" style={{background:'rgba(96,165,250,.1)',color:'#60a5fa',border:'1px solid rgba(96,165,250,.2)',fontSize:9}}>🎬 VIDEO</span>}
+                {(n.hidden||n.status==='draft') && <span className="badge" style={{background:'rgba(251,191,36,.12)',color:'#fbbf24',border:'1px solid rgba(251,191,36,.25)',fontSize:9}}>📝 DRAFT</span>}
               </div>
             </div>
 
             {/* Actions */}
             <div style={{display:'flex',gap:5,flexShrink:0,alignItems:'center'}}>
+              {/* Publish draft */}
+              {(n.hidden||n.status==='draft')&&(
+                <button className="btn btn-icon" title="Publish this draft" style={{borderColor:'rgba(52,211,153,.4)',color:'#34d399'}}
+                  onClick={async()=>{ await db.collection('news').doc(n.id).update({hidden:false,published:true,status:'published'}); toast.add('✅ Published!'); }}>
+                  <Ic n="send" s={13}/>
+                </button>
+              )}
+              {/* Play video */}
+              {n.videoUrl && (
+                <button className="btn btn-icon" title="Play Video" style={{borderColor:'rgba(96,165,250,.4)',color:'#60a5fa'}}
+                  onClick={()=>setVideoPlayId(videoPlayId===n.id?null:n.id)}>
+                  <Ic n="play" s={13}/>
+                </button>
+              )}
+              {/* Download video */}
+              {n.videoUrl && (
+                <a href={n.videoUrl} download={`kwtnews-${n.id}.mp4`} target="_blank" rel="noopener noreferrer"
+                  className="btn btn-icon" title="Download Video" style={{textDecoration:'none',borderColor:'rgba(96,165,250,.4)',color:'#60a5fa'}}>
+                  <Ic n="download" s={13}/>
+                </a>
+              )}
               {/* Breaking toggle */}
               <button className="tog" title={n.isBreaking?'Remove Breaking':'Set Breaking'}
                 style={{background:n.isBreaking?'var(--danger)':'var(--border2)'}}
@@ -1260,6 +1305,15 @@ const NewsManager = ({toast, initCat='all'}) => {
               </button>
             </div>
           </div>
+          {/* Inline video player */}
+          {videoPlayId===n.id&&n.videoUrl&&(
+            <div style={{borderBottom:'1px solid rgba(26,45,74,.5)',background:'#000',padding:'4px 0'}}>
+              <video src={n.videoUrl} controls autoPlay playsInline
+                style={{width:'100%',maxHeight:280,display:'block',background:'#000'}}
+                onError={e=>{ toast.add('Video load failed','error'); setVideoPlayId(null); }}/>
+            </div>
+          )}
+          </React.Fragment>
         ))}
       </div>
     </div>
@@ -1881,6 +1935,7 @@ const AutomationPage = ({toast}) => {
   const [showSetup,     setShowSetup]     = useState(!localStorage.getItem(LS_TOKEN));
   const [configs,       setConfigs]       = useState({});
   const [logs,          setLogs]          = useState([]);
+  const [showAllLogs,   setShowAllLogs]   = useState(false);
   const [ghRuns,        setGhRuns]        = useState({});
   const [apiStatus,     setApiStatus]     = useState({});
   const [triggering,    setTriggering]    = useState({});
@@ -2194,7 +2249,8 @@ const AutomationPage = ({toast}) => {
       <div className="card" style={{padding:16}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:12}}>
           <span style={{fontWeight:700,fontSize:13}}>📋 Activity Log</span>
-          <span style={{marginLeft:'auto',fontSize:11,color:'var(--dim)',background:'var(--surface2)',padding:'2px 8px',borderRadius:99}}>{logs.length} entries</span>
+          <span style={{marginLeft:8,fontSize:11,color:'var(--dim)',background:'var(--surface2)',padding:'2px 8px',borderRadius:99}}>Last 10</span>
+          <span style={{marginLeft:'auto',fontSize:11,color:'var(--dim)',background:'var(--surface2)',padding:'2px 8px',borderRadius:99}}>{logs.length} total</span>
         </div>
         {logs.length===0?(
           <div style={{textAlign:'center',padding:'28px 0'}}>
@@ -2204,7 +2260,7 @@ const AutomationPage = ({toast}) => {
           </div>
         ):(
           <div style={{display:'flex',flexDirection:'column',gap:5}}>
-            {logs.slice(0,30).map(log=>{
+            {(showAllLogs?logs:logs.slice(0,10)).map(log=>{
               const cat=CATS.find(c=>c.id===log.category);
               const st=log.status;
               const sc=st==='posted'?'#34d399':st==='error'?'#f87171':'#fbbf24';
@@ -2221,6 +2277,14 @@ const AutomationPage = ({toast}) => {
                 </div>
               );
             })}
+            {logs.length>10&&(
+              <button onClick={()=>setShowAllLogs(p=>!p)}
+                style={{marginTop:4,padding:'8px',borderRadius:8,border:'1.5px solid var(--border)',background:'transparent',color:'var(--muted)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Outfit',width:'100%',transition:'all .15s'}}
+                onMouseOver={e=>e.currentTarget.style.color='var(--accent)'}
+                onMouseOut={e=>e.currentTarget.style.color='var(--muted)'}>
+                {showAllLogs?'▲ Show Less':(`▼ View All (${logs.length} entries)`)}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -3016,42 +3080,59 @@ const makeNewsVideo = (article, durSecs=20) => new Promise((resolve,reject) => {
   } else loadLogoThen(null);
 });
 
-// ── Voice + Multi-Image Video ─────────────────────────────────
-const makeNewsVideoWithVoice = async (article, durSecs=25) => {
+// ── Voice + Multi-Image Documentary News Video ───────────────
+const makeNewsVideoWithVoice = async (article, durSecs=28) => {
   const script = (article.isBreaking?'Breaking news! ':'')+article.title+'. '+(article.summary||'');
-  let audioCtx=null, audioStream=null;
+  let audioEl=null, audioStream=null, audioBlobUrl=null;
 
-  // ── TTS audio (Pollinations) ──────────────────────────────────
+  // ── TTS audio — HTMLAudioElement.captureStream() approach ────
+  // More reliable than AudioContext: browser handles format decoding internally
   try{
-    const ttsUrl='https://text.pollinations.ai/'+encodeURIComponent(script.slice(0,400))+'?model=openai-audio&voice=nova&seed=42';
-    const resp=await Promise.race([fetch(ttsUrl),new Promise((_,r)=>setTimeout(()=>r(new Error('tts timeout')),22000))]);
-    if(resp.ok){
-      const buf=await resp.arrayBuffer();
-      if(buf.byteLength>2000){
-        audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-        let decoded=null;
-        try{
-          decoded=await new Promise((res,rej)=>{
-            let done=false;
-            const ok=(d)=>{if(!done){done=true;res(d);}};
-            const err=(e)=>{if(!done){done=true;rej(e);}};
-            try{const p=audioCtx.decodeAudioData(buf.slice(0),ok,err);if(p&&p.then)p.then(ok).catch(err);}catch(e){err(e);}
-          });
-        }catch(e){}
-        if(decoded&&decoded.duration>0.5){
-          if(decoded.duration+4>durSecs) durSecs=Math.ceil(decoded.duration)+4;
-          const dest=audioCtx.createMediaStreamDestination();
-          const src=audioCtx.createBufferSource();
-          src.buffer=decoded; src.connect(dest); src.connect(audioCtx.destination);
-          // Don't start here — start AFTER rec.start() so timing is correct
-          audioStream={stream:dest.stream, src, ctx:audioCtx};
+    const ttsText = script.slice(0,500);
+    // Try multiple TTS endpoints for reliability
+    const ttsUrls = [
+      'https://text.pollinations.ai/'+encodeURIComponent(ttsText)+'?model=openai-audio&voice=alloy&seed=1',
+      'https://text.pollinations.ai/'+encodeURIComponent(ttsText)+'?model=openai-audio&voice=nova&seed=42',
+    ];
+    for(const ttsUrl of ttsUrls){
+      try{
+        const resp=await Promise.race([
+          fetch(ttsUrl,{headers:{'Accept':'audio/mpeg,audio/*'}}),
+          new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),20000))
+        ]);
+        if(!resp.ok) continue;
+        const buf=await resp.arrayBuffer();
+        if(buf.byteLength<2000) continue;
+        // Test if audio can be decoded using a temporary Audio element
+        audioBlobUrl=URL.createObjectURL(new Blob([buf],{type:'audio/mpeg'}));
+        const testEl=new Audio(audioBlobUrl);
+        const canPlay=await new Promise(res=>{
+          testEl.oncanplaythrough=()=>res(true);
+          testEl.onerror=()=>res(false);
+          testEl.load();
+          setTimeout(()=>res(false),5000);
+        });
+        if(!canPlay){ URL.revokeObjectURL(audioBlobUrl); audioBlobUrl=null; continue; }
+        const audioDur=testEl.duration||0;
+        if(audioDur>0.5) durSecs=Math.max(durSecs,Math.ceil(audioDur)+4);
+        // Use a fresh Audio element for capture (not the test one)
+        audioEl=new Audio(audioBlobUrl);
+        audioEl.crossOrigin='anonymous';
+        const capStream=audioEl.captureStream?audioEl.captureStream()
+          :(audioEl.mozCaptureStream?audioEl.mozCaptureStream():null);
+        if(capStream&&capStream.getAudioTracks().length>0){
+          audioStream={element:audioEl,stream:capStream};
+          break;
         }
-      }
+      }catch(e){ if(audioBlobUrl){URL.revokeObjectURL(audioBlobUrl);audioBlobUrl=null;} }
     }
   }catch(e){}
 
-  // ── Preload all images ────────────────────────────────────────
-  const allUrls=[article.imageUrl,...(article.extraImages||[])].filter(Boolean);
+  // ── Preload all images (deduplicated) ─────────────────────────
+  const seenUrls=new Set();
+  const allUrls=[article.imageUrl,...(article.extraImages||[])].filter(u=>{
+    if(!u||seenUrls.has(u)) return false; seenUrls.add(u); return true;
+  });
   const loadImg=src=>new Promise(res=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>res(null);i.src=src;});
   const [bgImgs,logoImg]=await Promise.all([
     Promise.all(allUrls.map(loadImg)),
@@ -3072,32 +3153,37 @@ const makeNewsVideoWithVoice = async (article, durSecs=25) => {
     const easeOut=t=>1-Math.pow(1-Math.min(1,t),3),lerp=(a,b,t)=>a+(b-a)*Math.min(1,Math.max(0,t));
     ctx.font='bold 50px Arial';
     const titleLines=(()=>{const mW=W*0.51,words=title.split(' ');let ln='',ls=[];for(const w of words){const t=ln+w+' ';if(ctx.measureText(t).width>mW&&ln){ls.push(ln.trim());ln=w+' ';}else ln=t;}if(ln.trim())ls.push(ln.trim());return ls.slice(0,3);})();
-    const tickerFull=`${title}  •  ${catInfo.label.replace(/^\S+\s/,'')}  •  ${source}  •  KWT News  •  ${dateStr}  •  `;
+    const tickerFull=`${title}  •  ${catInfo.label.replace(/^\S+\s/,'')}  •  KwtNews.com  •  ${dateStr}  •  `;
     let tickerX=W;
     const IMG_SWITCH=Math.max(6,Math.floor(durSecs/Math.max(1,imgs.length)));
 
-    // MediaRecorder
-    const videoStream=cv.captureStream(25);
+    // MediaRecorder — mix video + audio streams
+    const videoStream=cv.captureStream(30); // 30fps for smoother output
     const audioMediaStream=audioStream?audioStream.stream:null;
-    const recStream=audioMediaStream?new MediaStream([...videoStream.getVideoTracks(),...audioMediaStream.getAudioTracks()]):videoStream;
-    const mimes=audioMediaStream?['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']:['video/webm;codecs=vp9','video/webm'];
+    const recStream=audioMediaStream
+      ?new MediaStream([...videoStream.getVideoTracks(),...audioMediaStream.getAudioTracks()])
+      :videoStream;
+    const mimes=audioMediaStream
+      ?['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']
+      :['video/webm;codecs=vp9','video/webm'];
     const mime=mimes.find(m=>MediaRecorder.isTypeSupported(m))||'video/webm';
     let rec;
-    try{rec=new MediaRecorder(recStream,{mimeType:mime,videoBitsPerSecond:4000000});}
+    try{rec=new MediaRecorder(recStream,{mimeType:mime,videoBitsPerSecond:6000000});}
     catch(e){return reject(new Error('MediaRecorder: '+e.message));}
     const chunks=[];
     rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
-    rec.onstop=()=>{if(audioCtx)audioCtx.close().catch(()=>{});const blob=new Blob(chunks,{type:'video/webm'});resolve({url:URL.createObjectURL(blob),blob});};
+    rec.onstop=()=>{
+      if(audioBlobUrl) URL.revokeObjectURL(audioBlobUrl);
+      const blob=new Blob(chunks,{type:'video/webm'});
+      resolve({url:URL.createObjectURL(blob),blob});
+    };
     rec.start(100);
-    // Start audio 1.5s after recording begins (resume AudioContext first — required on mobile)
+    // Start audio 1.5s after recording — HTMLAudioElement is more reliable than AudioContext
     if(audioStream){
-      const{src:aSrc,ctx:aCtx}=audioStream;
-      setTimeout(()=>{
-        try{(aCtx.resume?aCtx.resume():Promise.resolve()).then(()=>{try{aSrc.start();}catch(e){}}).catch(()=>{try{aSrc.start();}catch(e){}});}catch(e){}
-      },1500);
+      setTimeout(()=>{ try{audioStream.element.play().catch(()=>{});}catch(e){} },1500);
     }
-    // setTimeout guarantees stop even if rAF pauses (background tab)
-    const stopAt=setTimeout(()=>{try{rec.stop();}catch(e){}},durSecs*1000+600);
+    // Fallback stop timeout
+    const stopAt=setTimeout(()=>{try{rec.stop();}catch(e){}},durSecs*1000+800);
 
     const t0=performance.now();
     const frame=()=>{
@@ -3141,33 +3227,139 @@ const makeNewsVideoWithVoice = async (article, durSecs=25) => {
         ctx.globalAlpha=1;ctx.restore();
       }
 
-      // Header bar
-      ctx.fillStyle='rgba(5,12,24,0.97)';ctx.fillRect(0,0,W,68);
-      ctx.fillStyle='#F5A623';ctx.fillRect(0,66,W,3);
-      ctx.fillStyle='#fff';ctx.font='bold 30px Arial';ctx.fillText('KWT',22,45);
-      ctx.fillStyle='#F5A623';ctx.fillText(' NEWS',78,45);
-      ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;
-      ctx.beginPath();ctx.moveTo(170,16);ctx.lineTo(170,52);ctx.stroke();
-      if(Math.floor(sec*2)%2===0)ctx.fillStyle='rgba(239,68,68,0.95)';else ctx.fillStyle='rgba(180,40,40,0.9)';
-      ctx.beginPath();ctx.roundRect(182,22,66,26,5);ctx.fill();
-      ctx.fillStyle='#fff';ctx.font='bold 12px Arial';ctx.fillText('● LIVE',190,39);
-      ctx.textAlign='right';ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='13px Arial';ctx.fillText(dateStr,W-20,42);ctx.textAlign='left';
+      // Header bar — KwtNews.com branding
+      const hGrad=ctx.createLinearGradient(0,0,W,0);
+      hGrad.addColorStop(0,'rgba(3,8,18,0.98)');hGrad.addColorStop(1,'rgba(8,16,36,0.95)');
+      ctx.fillStyle=hGrad;ctx.fillRect(0,0,W,70);
+      ctx.fillStyle='#F5A623';ctx.fillRect(0,68,W,3);
+      // Logo: KwtNews (white) + .com (orange)
+      ctx.fillStyle='#fff';ctx.font='bold 32px Arial';ctx.fillText('KwtNews',18,46);
+      ctx.fillStyle='#F5A623';ctx.font='bold 32px Arial';ctx.fillText('.com',158,46);
+      // Separator
+      ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(270,16);ctx.lineTo(270,54);ctx.stroke();
+      // LIVE badge (blinking)
+      if(Math.floor(sec*2)%2===0)ctx.fillStyle='rgba(239,68,68,0.95)';else ctx.fillStyle='rgba(180,40,40,0.85)';
+      ctx.beginPath();ctx.roundRect(282,22,68,28,6);ctx.fill();
+      ctx.fillStyle='#fff';ctx.font='bold 12px Arial';ctx.fillText('● LIVE',290,40);
+      ctx.textAlign='right';ctx.fillStyle='rgba(255,255,255,0.45)';ctx.font='13px Arial';ctx.fillText(dateStr,W-18,42);ctx.textAlign='left';
 
-      // Category badge
-      if(sec>0.3){const t=easeOut((sec-0.3)/0.4);ctx.globalAlpha=t;ctx.fillStyle=accent;ctx.beginPath();ctx.roundRect(22,80,200,30,6);ctx.fill();ctx.fillStyle='#050c18';ctx.font='bold 13px Arial';ctx.fillText(catInfo.label.replace(/^\S+\s/,'').toUpperCase(),30,100);if(article.isBreaking){ctx.fillStyle='#ef4444';ctx.beginPath();ctx.roundRect(232,80,150,30,6);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 13px Arial';ctx.fillText('⚡ BREAKING',240,100);}ctx.globalAlpha=1;}
+      // Category badge + breaking badge
+      if(sec>0.3){
+        const t=easeOut((sec-0.3)/0.4);ctx.globalAlpha=t;
+        ctx.fillStyle=accent;ctx.beginPath();ctx.roundRect(22,80,220,32,7);ctx.fill();
+        ctx.fillStyle='#050c18';ctx.font='bold 13px Arial';ctx.fillText(catInfo.label.replace(/^\S+\s/,'').toUpperCase(),32,102);
+        if(article.isBreaking){
+          const bGrad=ctx.createLinearGradient(244,80,394,80);bGrad.addColorStop(0,'#ef4444');bGrad.addColorStop(1,'#dc2626');
+          ctx.fillStyle=bGrad;ctx.beginPath();ctx.roundRect(244,80,160,32,7);ctx.fill();
+          ctx.fillStyle='#fff';ctx.font='bold 13px Arial';ctx.fillText('⚡ BREAKING NEWS',252,102);
+        }
+        ctx.globalAlpha=1;
+      }
 
-      // Title (staggered slide-in)
-      if(sec>0.6){ctx.save();ctx.beginPath();ctx.rect(0,115,W*0.54+30,H-115-48);ctx.clip();ctx.shadowColor='rgba(0,0,0,0.95)';ctx.shadowBlur=20;ctx.shadowOffsetX=2;ctx.shadowOffsetY=2;let ty=165;titleLines.forEach((ln,idx)=>{const ld=idx*0.13,lt=easeOut(Math.max(0,(sec-0.6-ld)/0.5));ctx.globalAlpha=lt;ctx.fillStyle='#fff';ctx.font='bold 50px Arial';const lx=lerp(-900,22,easeOut(Math.max(0,(sec-0.6-ld)/0.45)));ctx.fillText(ln,lx,ty);ty+=64;});ctx.shadowBlur=0;ctx.shadowOffsetX=0;ctx.shadowOffsetY=0;ctx.globalAlpha=1;ctx.restore();}
-      // Accent bar
-      if(sec>1.2){const lH=lerp(0,Math.min(titleLines.length*64+10,H-250),easeOut((sec-1.2)/0.4));ctx.fillStyle=accent;ctx.fillRect(8,125,4,lH);}
-      // Summary
-      if(sec>4.0&&summary){const t=easeOut((sec-4.0)/0.8);ctx.globalAlpha=t;ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(22,titleLines.length*64+160,W*0.52-44,1);ctx.fillStyle='rgba(210,225,245,0.85)';ctx.font='20px Arial';ctx.shadowColor='rgba(0,0,0,0.8)';ctx.shadowBlur=10;wrapTxt(ctx,summary,22,titleLines.length*64+178,W*0.52-44,30);ctx.shadowBlur=0;ctx.globalAlpha=1;}
-      // Lower third
-      if(sec>2.8){const t=easeOut((sec-2.8)/0.5),ltY=lerp(H,H-170,t);ctx.fillStyle='rgba(5,12,24,0.95)';ctx.fillRect(0,ltY,W*0.54,90);ctx.fillStyle=accent;ctx.fillRect(0,ltY,5,90);if(logoImg){ctx.save();ctx.beginPath();ctx.arc(28,ltY+30,18,0,Math.PI*2);ctx.closePath();ctx.clip();ctx.drawImage(logoImg,10,ltY+12,36,36);ctx.restore();}const ltx=logoImg?52:14;ctx.fillStyle=accent;ctx.font='bold 11px Arial';ctx.letterSpacing='1px';ctx.fillText('SOURCE',ltx,ltY+20);ctx.letterSpacing='0px';ctx.fillStyle='rgba(255,255,255,0.9)';ctx.font='bold 16px Arial';ctx.fillText(source,ltx,ltY+42);ctx.fillStyle='rgba(255,255,255,0.18)';ctx.fillRect(ltx,ltY+52,W*0.54-ltx-14,1);ctx.fillStyle='rgba(255,255,255,0.45)';ctx.font='12px Arial';ctx.fillText(article.readTime||'3 min read',ltx,ltY+70);}
-      // Ticker
-      ctx.fillStyle='rgba(5,12,24,0.97)';ctx.fillRect(0,H-46,W,46);ctx.fillStyle=accent;ctx.fillRect(0,H-47,W,2);ctx.fillStyle=accent;ctx.fillRect(0,H-46,108,46);ctx.fillStyle='#050c18';ctx.font='bold 12px Arial';ctx.letterSpacing='0.5px';ctx.fillText('LATEST',10,H-26);ctx.fillText('NEWS',18,H-11);ctx.letterSpacing='0px';ctx.save();ctx.beginPath();ctx.rect(112,H-46,W-112,46);ctx.clip();ctx.fillStyle='rgba(255,255,255,0.8)';ctx.font='13px Arial';ctx.fillText(tickerFull.repeat(3),tickerX,H-17);ctx.restore();tickerX-=2.2;if(tickerX<-ctx.measureText(tickerFull).width)tickerX=W;
-      // Progress
-      ctx.fillStyle='rgba(255,255,255,0.06)';ctx.fillRect(0,0,W,3);ctx.fillStyle=accent;ctx.fillRect(0,0,W*prog,3);
+      // Left accent bar (documentary style)
+      if(sec>1.0){
+        const lH=lerp(0,Math.min(titleLines.length*62+20,H-280),easeOut((sec-1.0)/0.5));
+        // Gradient bar
+        const bGrad=ctx.createLinearGradient(0,125,0,125+lH);
+        bGrad.addColorStop(0,accent);bGrad.addColorStop(1,accent+'88');
+        ctx.fillStyle=bGrad;ctx.fillRect(6,125,5,lH);
+      }
+
+      // Title — staggered slide-in with glow
+      if(sec>0.6){
+        ctx.save();ctx.beginPath();ctx.rect(14,115,W*0.52+20,H-115-50);ctx.clip();
+        ctx.shadowColor='rgba(0,0,0,0.95)';ctx.shadowBlur=24;ctx.shadowOffsetX=2;ctx.shadowOffsetY=3;
+        let ty=170;
+        titleLines.forEach((ln,idx)=>{
+          const ld=idx*0.15,lt=easeOut(Math.max(0,(sec-0.6-ld)/0.5));
+          ctx.globalAlpha=lt;ctx.fillStyle='#ffffff';ctx.font='bold 52px Arial';
+          const lx=lerp(-1000,22,easeOut(Math.max(0,(sec-0.6-ld)/0.45)));
+          ctx.fillText(ln,lx,ty);ty+=68;
+        });
+        ctx.shadowBlur=0;ctx.globalAlpha=1;ctx.restore();
+      }
+
+      // Summary text (documentary info panel)
+      if(sec>3.5&&summary){
+        const t=easeOut((sec-3.5)/0.9);ctx.globalAlpha=t*0.9;
+        // Subtle separator line
+        const sepG=ctx.createLinearGradient(22,0,W*0.52-20,0);
+        sepG.addColorStop(0,accent);sepG.addColorStop(1,'transparent');
+        ctx.fillStyle=sepG;ctx.fillRect(22,titleLines.length*68+140,W*0.52-40,1.5);
+        ctx.fillStyle='rgba(200,220,245,0.88)';ctx.font='19px Arial';
+        ctx.shadowColor='rgba(0,0,0,0.9)';ctx.shadowBlur=12;
+        wrapTxt(ctx,summary,22,titleLines.length*68+158,W*0.52-40,30);
+        ctx.shadowBlur=0;ctx.globalAlpha=1;
+      }
+
+      // ── News Anchor Visual (right side circle frame) ─────────
+      if(bgImg&&sec>1.5){
+        const ancX=W*0.75,ancY=H*0.45,ancR=120;
+        const ancT=easeOut(Math.min(1,(sec-1.5)/0.8));
+        ctx.save();ctx.globalAlpha=ancT;
+        // Outer glow ring
+        const ringGrad=ctx.createRadialGradient(ancX,ancY,ancR-8,ancX,ancY,ancR+12);
+        ringGrad.addColorStop(0,accent+'cc');ringGrad.addColorStop(1,'transparent');
+        ctx.fillStyle=ringGrad;ctx.beginPath();ctx.arc(ancX,ancY,ancR+12,0,Math.PI*2);ctx.fill();
+        // Circular clip
+        ctx.beginPath();ctx.arc(ancX,ancY,ancR,0,Math.PI*2);ctx.clip();
+        // Ken Burns on anchor image
+        const aZoom=1+slotSec/IMG_SWITCH*0.05;
+        ctx.save();ctx.translate(ancX,ancY);ctx.scale(aZoom,aZoom);
+        ctx.drawImage(bgImg,-ancR,-ancR,ancR*2,ancR*2);
+        ctx.restore();
+        // Overlay gradient to make it look like a studio anchor shot
+        const ancOv=ctx.createLinearGradient(ancX-ancR,ancY,ancX+ancR,ancY);
+        ancOv.addColorStop(0,'rgba(5,12,24,0.3)');ancOv.addColorStop(0.5,'rgba(5,12,24,0)');ancOv.addColorStop(1,'rgba(5,12,24,0.2)');
+        ctx.fillStyle=ancOv;ctx.fillRect(ancX-ancR,ancY-ancR,ancR*2,ancR*2);
+        ctx.restore();
+        // "REPORTER" label under circle
+        ctx.save();ctx.globalAlpha=ancT;
+        ctx.fillStyle='rgba(5,12,24,0.85)';ctx.beginPath();ctx.roundRect(ancX-70,ancY+ancR+8,140,24,5);ctx.fill();
+        ctx.fillStyle=accent;ctx.font='bold 11px Arial';ctx.textAlign='center';ctx.fillText('KWT NEWS CORRESPONDENT',ancX,ancY+ancR+24);ctx.textAlign='left';
+        ctx.restore();
+      }
+
+      // Lower third — source + branding
+      if(sec>2.5){
+        const t=easeOut((sec-2.5)/0.6),ltY=lerp(H+50,H-175,t);
+        // Panel background with gradient
+        const ltGrad=ctx.createLinearGradient(0,ltY,W*0.56,ltY);
+        ltGrad.addColorStop(0,'rgba(3,8,18,0.97)');ltGrad.addColorStop(1,'rgba(5,14,28,0.85)');
+        ctx.fillStyle=ltGrad;ctx.fillRect(0,ltY,W*0.56,95);
+        ctx.fillStyle=accent;ctx.fillRect(0,ltY,6,95);
+        // Logo circle
+        if(logoImg){
+          ctx.save();ctx.beginPath();ctx.arc(30,ltY+32,20,0,Math.PI*2);ctx.closePath();
+          ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fill();
+          ctx.clip();ctx.drawImage(logoImg,10,ltY+12,40,40);ctx.restore();
+        }
+        const ltx=logoImg?60:16;
+        ctx.fillStyle=accent;ctx.font='bold 10px Arial';ctx.letterSpacing='1.5px';
+        ctx.fillText('REPORTED BY',ltx,ltY+18);ctx.letterSpacing='0px';
+        ctx.fillStyle='rgba(255,255,255,0.92)';ctx.font='bold 17px Arial';ctx.fillText(source,ltx,ltY+40);
+        ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(ltx,ltY+50,W*0.56-ltx-16,1);
+        ctx.fillStyle='rgba(180,200,230,0.55)';ctx.font='12px Arial';
+        ctx.fillText('kwtnews.com  •  '+article.readTime,ltx,ltY+70);
+      }
+
+      // Ticker bar — scrolling news
+      ctx.fillStyle='rgba(3,8,18,0.97)';ctx.fillRect(0,H-50,W,50);
+      ctx.fillStyle=accent;ctx.fillRect(0,H-51,W,2.5);
+      const tkGrad=ctx.createLinearGradient(0,H-50,120,H);
+      tkGrad.addColorStop(0,accent);tkGrad.addColorStop(1,accent+'cc');
+      ctx.fillStyle=tkGrad;ctx.fillRect(0,H-50,120,50);
+      ctx.fillStyle='#050c18';ctx.font='bold 12px Arial';ctx.textAlign='center';
+      ctx.fillText('BREAKING',60,H-32);ctx.fillText('NEWS',60,H-15);ctx.textAlign='left';
+      ctx.save();ctx.beginPath();ctx.rect(124,H-50,W-124,50);ctx.clip();
+      ctx.fillStyle='rgba(230,240,255,0.88)';ctx.font='14px Arial';
+      ctx.fillText(tickerFull.repeat(4),tickerX,H-18);
+      ctx.restore();tickerX-=2.5;if(tickerX<-ctx.measureText(tickerFull).width)tickerX=W;
+
+      // Progress bar at top
+      ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fillRect(0,0,W,3.5);
+      ctx.fillStyle=accent;ctx.fillRect(0,0,W*prog,3.5);
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -3192,16 +3384,25 @@ const guessSourceDomain = (name) => {
 };
 const shortSourceName = (name) => (name||'KWT').split(/[\s,&]+/)[0].slice(0,10);
 
+// Module-level logo cache to avoid repeated full-collection reads
+const _logoCache = new Map();
+
 const getOrCreateSourceLogo = async (sourceName) => {
+  // Return from cache if available
+  const cacheKey = (sourceName||'').toLowerCase().trim();
+  if(_logoCache.has(cacheKey)) return _logoCache.get(cacheKey);
+
   // 1. Check existing Firestore logos
   try{
     const snap = await db.collection('logos').get();
     const lower = sourceName.toLowerCase();
+    // Pre-cache all logos to avoid future reads
+    snap.docs.forEach(d=>{ const k=(d.data().name||'').toLowerCase(); if(k) _logoCache.set(k,d.data().url); });
     const found = snap.docs.find(d=>{
       const n=(d.data().name||'').toLowerCase();
       return lower.includes(n)||n.includes(lower.split(/\s+/)[0]);
     });
-    if(found) return found.data().url;
+    if(found){ _logoCache.set(cacheKey,found.data().url); return found.data().url; }
   }catch(e){}
   // 2. Try Clearbit
   const domain = guessSourceDomain(sourceName);
@@ -3213,6 +3414,7 @@ const getOrCreateSourceLogo = async (sourceName) => {
     });
     if(ok){
       const short = shortSourceName(sourceName);
+      _logoCache.set(cacheKey,url);
       try{ await db.collection('logos').add({url,name:short,createdAt:firebase.firestore.FieldValue.serverTimestamp()}); }catch(e){}
       return url;
     }
@@ -3221,6 +3423,7 @@ const getOrCreateSourceLogo = async (sourceName) => {
   const q = encodeURIComponent(sourceName+' news logo icon minimal');
   const genUrl = `https://image.pollinations.ai/prompt/${q}?width=128&height=128&seed=7&nologo=true`;
   const short = shortSourceName(sourceName);
+  _logoCache.set(cacheKey,genUrl);
   try{ await db.collection('logos').add({url:genUrl,name:short,createdAt:firebase.firestore.FieldValue.serverTimestamp()}); }catch(e){}
   return genUrl;
 };
@@ -3422,15 +3625,17 @@ Return ONLY JSON: {"reply": "your helpful response max 300 chars", "article": nu
       const src = shortSourceName(article.source||'KWT News');
       try{ sourceLogo = await getOrCreateSourceLogo(article.source||'KWT News'); }catch(e){}
 
-      // 2. Fetch 3 different background images for video transitions
+      // 2. Fetch distinct background images for video transitions (deduplicated)
       setVideoStatus('image'); toast.add('Fetching images...','info');
       const titleWords=(article.title||'').split(' ').slice(0,4).join(' ');
       const [img1,img2,img3]=await Promise.all([
         getImg(article.imageQuery||article.title,false).catch(()=>''),
-        getImg(titleWords+' breaking news',false).catch(()=>''),
-        getImg((article.category||'world')+' news politics',false).catch(()=>''),
+        getImg(titleWords+' news event',false).catch(()=>''),
+        getImg((article.category||'world')+' news',false).catch(()=>''),
       ]);
-      const extraImages=[img2,img3].filter(Boolean);
+      // Remove duplicates from extra images
+      const seenImgUrls=new Set([img1].filter(Boolean));
+      const extraImages=[img2,img3].filter(u=>u&&!seenImgUrls.has(u)&&seenImgUrls.add(u));
 
       // 3. Save text+logo draft immediately so something always saves
       setVideoStatus('saving'); toast.add('💾 Saving draft...','info');
