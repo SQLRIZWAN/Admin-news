@@ -74,22 +74,31 @@ def _make_top_bar_frame(
     category_color: str,
     size: tuple = VIDEO_SIZE,
 ) -> np.ndarray:
-    """Create the static top-bar overlay: source name left, category badge right."""
+    """Create the static top-bar overlay: KwtNews.com branding left, category badge right."""
     w, h = size
     bar_height = 72
     img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    # Gradient from top
+    # Gradient from top (dark, like a real news broadcast)
     for y in range(bar_height):
-        alpha = int(210 * (1 - y / bar_height))
+        alpha = int(230 * (1 - y / bar_height))
         draw.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
 
-    font_lg = _get_font(22)
+    # Bottom accent bar (orange line, 3px)
+    draw.line([(0, bar_height - 3), (w, bar_height - 3)], fill=(245, 166, 35, 255), width=3)
+
+    font_lg = _get_font(26)
+    font_dot = _get_font(26)
     font_sm = _get_font(18)
 
-    # Source name (left side)
-    draw.text((18, 22), f"📺  {source_name}", fill=(255, 255, 255, 220), font=font_lg)
+    # KwtNews.com branding (left side) — white "KwtNews" + orange ".com"
+    brand_x = 18
+    brand_y = 18
+    draw.text((brand_x, brand_y), "KwtNews", fill=(255, 255, 255, 245), font=font_lg)
+    kwt_bbox = draw.textbbox((brand_x, brand_y), "KwtNews", font=font_lg)
+    dot_x = kwt_bbox[2]
+    draw.text((dot_x, brand_y), ".com", fill=(245, 166, 35, 245), font=font_dot)
 
     # Category badge (right side)
     badge_text = category_label
@@ -103,7 +112,7 @@ def _make_top_bar_frame(
     draw.rounded_rectangle(
         [bx - 10, by - 6, bx + bw + 10, by + bh + 6],
         radius=14,
-        fill=(*cat_rgb, 210),
+        fill=(*cat_rgb, 220),
     )
     draw.text((bx, by), badge_text, fill=(15, 15, 15, 255), font=font_sm)
 

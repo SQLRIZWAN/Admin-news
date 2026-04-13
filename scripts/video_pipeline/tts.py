@@ -53,65 +53,49 @@ def _clean_for_tts(script: str) -> str:
 
 def _to_ssml(script: str, voice: str) -> str:
     """
-    Wrap the script in SSML for natural, human news-anchor sounding speech.
-    Uses mstts:express-as style="newscast-casual" for hi-IN voices.
-    Falls back to prosody adjustments if express-as is not supported.
-    """
-    # Clean any code/JSON artifacts BEFORE escaping XML
-    script = _clean_for_tts(script)
+    Wrap the already-cleaned script in SSML for natural, human news-anchor
+    sounding speech. Caller must clean the script before passing here.
 
-    # Escape XML special characters
+    Uses mstts:express-as style="newscast" for hi-IN voices for maximum
+    human-like delivery. Falls back to prosody if express-as is not supported.
+    """
+    # Escape XML special characters (script is already clean — no JSON/markdown)
     text = script.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
     # Natural pauses at Hindi/English sentence boundaries
-    text = re.sub(r'([।\.!?])\s+', r'\1<break time="400ms"/> ', text)
-    text = re.sub(r'([,،;])\s+',   r'\1<break time="180ms"/> ', text)
+    text = re.sub(r'([।\.!?])\s+', r'\1<break time="500ms"/> ', text)
+    text = re.sub(r'([,،;])\s+',   r'\1<break time="200ms"/> ', text)
+    # Add natural breathing pause every ~30 words
+    words = text.split(' ')
+    chunked = []
+    for i, w in enumerate(words):
+        chunked.append(w)
+        if (i + 1) % 30 == 0 and i < len(words) - 1:
+            chunked.append('<break time="300ms"/>')
+    text = ' '.join(chunked)
 
-    # Use express-as newscast-casual style for more human-like delivery
-    # styledegree="2" = maximum expressiveness on hi-IN-MadhurNeural / hi-IN-SwaraNeural
+    # Detect language for xml:lang
+    lang = 'hi-IN' if 'hi-IN' in voice or 'hi-in' in voice.lower() else 'en-US'
+
+    # Use newscast style (not newscast-casual) for more professional anchor delivery
+    # styledegree="1.5" — strong but not exaggerated expressiveness
     inner = (
-        f'<mstts:express-as style="newscast-casual" styledegree="2">'
-        f'<prosody rate="-8%" pitch="+0%">'
+        f'<mstts:express-as style="newscast" styledegree="1.5">'
+        f'<prosody rate="-5%" pitch="+2%" volume="loud">'
         f'{text}'
         f'</prosody>'
         f'</mstts:express-as>'
     )
 
-    # Detect language for xml:lang
-    lang = 'hi-IN' if 'hi-IN' in voice or 'hi-in' in voice.lower() else 'en-US'
-
     ssml = (
         f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
-        f'xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="{lang}">'
+        f'xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="{lang}">'
         f'<voice name="{voice}">'
         f'{inner}'
         f'</voice>'
         f'</speak>'
     )
     return ssml
-
-
-async def _generate_async(script: str, output_path: str, voice: str) -> list:
-    """Async core: streams audio to file and collects word boundary events."""
-    # Use SSML for Hindi voices for more natural delivery
-    use_ssml = voice.startswith('hi-IN') or voice.startswith('en-IN')
-    text_input = _to_ssml(script, voice) if use_ssml else script
-
-    communicate = edge_tts.Communicate(text_input, voice)
-    word_timings = []
-
-    with open(output_path, 'wb') as f:
-        async for chunk in communicate.stream():
-            if chunk['type'] == 'audio':
-                f.write(chunk['data'])
-            elif chunk['type'] == 'WordBoundary':
-                word_timings.append({
-                    'word': chunk['text'],
-                    'start': chunk['offset'] / 10_000_000,       # 100-ns units → seconds
-                    'duration': chunk['duration'] / 10_000_000,
-                })
-
-    return word_timings
 
 
 def generate_tts(script: str, output_path: str, voice: str = 'hi-IN-MadhurNeural') -> list:
@@ -126,19 +110,20 @@ def generate_tts(script: str, output_path: str, voice: str = 'hi-IN-MadhurNeural
     Returns:
         List of dicts: [{word, start, duration}, ...]
     """
-    # Strip any JSON/code artifacts before sending to TTS
+    # Strip any JSON/code artifacts ONCE before any processing
     script = _clean_for_tts(script)
     if not script:
         raise ValueError("Script is empty after cleaning — nothing to convert to speech")
 
-    # Try SSML first, fall back to plain text if SSML fails
+    # Try SSML first (most natural), then plain text fallbacks
     attempts = [
-        (voice, True),                    # Primary voice with SSML
-        (voice, False),                   # Primary voice plain text
-        ('hi-IN-MadhurNeural', True),     # Hindi male SSML
-        ('hi-IN-SwaraNeural', True),      # Hindi female SSML
-        ('hi-IN-MadhurNeural', False),    # Hindi male plain
-        ('en-US-GuyNeural', False),       # English fallback
+        ('hi-IN-MadhurNeural', True),     # Primary: Hindi male SSML (newscast style)
+        ('hi-IN-SwaraNeural', True),       # Hindi female SSML
+        (voice, True),                     # Requested voice with SSML
+        (voice, False),                    # Requested voice plain text
+        ('hi-IN-MadhurNeural', False),     # Hindi male plain
+        ('hi-IN-SwaraNeural', False),      # Hindi female plain
+        ('en-US-GuyNeural', False),        # English fallback
     ]
     seen = set()
     unique_attempts = []
@@ -151,9 +136,8 @@ def generate_tts(script: str, output_path: str, voice: str = 'hi-IN-MadhurNeural
     last_err = None
     for v, use_ssml in unique_attempts:
         try:
-            # Override SSML decision in _generate_async via monkey-patch approach:
-            # directly pick SSML or plain based on attempt
             async def _run(v=v, use_ssml=use_ssml):
+                # Script is already cleaned — pass directly to _to_ssml without re-cleaning
                 text_input = _to_ssml(script, v) if use_ssml else script
                 communicate = edge_tts.Communicate(text_input, v)
                 word_timings = []
@@ -164,15 +148,15 @@ def generate_tts(script: str, output_path: str, voice: str = 'hi-IN-MadhurNeural
                         elif chunk['type'] == 'WordBoundary':
                             word_timings.append({
                                 'word': chunk['text'],
-                                'start': chunk['offset'] / 10_000_000,
+                                'start': chunk['offset'] / 10_000_000,       # 100-ns → seconds
                                 'duration': chunk['duration'] / 10_000_000,
                             })
                 return word_timings
 
             timings = asyncio.run(_run())
             if os.path.exists(output_path) and os.path.getsize(output_path) > 1024:
-                mode = 'SSML' if use_ssml else 'plain'
-                print(f"   Voice: {v} ({mode}) | Words: {len(timings)}")
+                mode = 'SSML-newscast' if use_ssml else 'plain'
+                print(f"   ✅ Voice: {v} ({mode}) | Words: {len(timings)}")
                 return timings
         except Exception as e:
             last_err = e
