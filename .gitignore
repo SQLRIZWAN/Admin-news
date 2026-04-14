@@ -1,0 +1,7 @@
+node_modules/
+app_compiled.js
+*.tmp
+*.log
+__pycache__/
+*.pyc
+.env
