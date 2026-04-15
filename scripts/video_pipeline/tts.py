@@ -53,48 +53,64 @@ def _clean_for_tts(script: str) -> str:
 
 def _to_ssml(script: str, voice: str) -> str:
     """
-    Wrap the already-cleaned script in SSML for natural, human news-anchor
-    sounding speech. Caller must clean the script before passing here.
+    Wrap the already-cleaned script in SSML for natural news-anchor speech.
+    Caller must clean the script before passing here.
 
-    Uses mstts:express-as style="newscast" for hi-IN voices for maximum
-    human-like delivery. Falls back to prosody if express-as is not supported.
+    IMPORTANT: Hindi voices (hi-IN-*) do NOT support mstts:express-as
+    style="newscast" — using it causes Microsoft's TTS service to reject the
+    request and return empty audio. Use prosody-only SSML for Hindi voices.
+    English voices (en-US-*, en-GB-*) support newscast style.
     """
     # Escape XML special characters (script is already clean — no JSON/markdown)
     text = script.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
     # Natural pauses at Hindi/English sentence boundaries
-    text = re.sub(r'([।\.!?])\s+', r'\1<break time="500ms"/> ', text)
-    text = re.sub(r'([,،;])\s+',   r'\1<break time="200ms"/> ', text)
-    # Add natural breathing pause every ~30 words
+    text = re.sub(r'([।\.!?])\s+', r'\1<break time="450ms"/> ', text)
+    text = re.sub(r'([,،;])\s+',   r'\1<break time="180ms"/> ', text)
+    # Add natural breathing pause every ~25 words
     words = text.split(' ')
     chunked = []
     for i, w in enumerate(words):
         chunked.append(w)
-        if (i + 1) % 30 == 0 and i < len(words) - 1:
-            chunked.append('<break time="300ms"/>')
+        if (i + 1) % 25 == 0 and i < len(words) - 1:
+            chunked.append('<break time="250ms"/>')
     text = ' '.join(chunked)
 
-    # Detect language for xml:lang
-    lang = 'hi-IN' if 'hi-IN' in voice or 'hi-in' in voice.lower() else 'en-US'
+    is_hindi = 'hi-IN' in voice or 'hi-in' in voice.lower()
+    lang = 'hi-IN' if is_hindi else 'en-US'
 
-    # Use newscast style (not newscast-casual) for more professional anchor delivery
-    # styledegree="1.5" — strong but not exaggerated expressiveness
-    inner = (
-        f'<mstts:express-as style="newscast" styledegree="1.5">'
-        f'<prosody rate="-5%" pitch="+2%" volume="loud">'
-        f'{text}'
-        f'</prosody>'
-        f'</mstts:express-as>'
-    )
-
-    ssml = (
-        f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
-        f'xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="{lang}">'
-        f'<voice name="{voice}">'
-        f'{inner}'
-        f'</voice>'
-        f'</speak>'
-    )
+    if is_hindi:
+        # Hindi voices: prosody only (rate slightly slower for clear diction)
+        inner = (
+            f'<prosody rate="-8%" pitch="+3%" volume="loud">'
+            f'{text}'
+            f'</prosody>'
+        )
+        ssml = (
+            f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
+            f'xml:lang="{lang}">'
+            f'<voice name="{voice}">'
+            f'{inner}'
+            f'</voice>'
+            f'</speak>'
+        )
+    else:
+        # English voices: newscast style is supported
+        inner = (
+            f'<mstts:express-as style="newscast">'
+            f'<prosody rate="-5%" pitch="+2%" volume="loud">'
+            f'{text}'
+            f'</prosody>'
+            f'</mstts:express-as>'
+        )
+        ssml = (
+            f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
+            f'xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="{lang}">'
+            f'<voice name="{voice}">'
+            f'{inner}'
+            f'</voice>'
+            f'</speak>'
+        )
     return ssml
 
 
@@ -115,15 +131,17 @@ def generate_tts(script: str, output_path: str, voice: str = 'hi-IN-MadhurNeural
     if not script:
         raise ValueError("Script is empty after cleaning — nothing to convert to speech")
 
-    # Try SSML first (most natural), then plain text fallbacks
+    # Try SSML first (most natural), then plain text fallbacks.
+    # Hindi SSML uses prosody-only (no mstts:express-as newscast — not supported for hi-IN).
+    # Plain Hindi comes before English so we never fall to English if Hindi is reachable.
     attempts = [
-        ('hi-IN-MadhurNeural', True),     # Primary: Hindi male SSML (newscast style)
+        (voice, True),                     # Requested voice with SSML (primary)
+        ('hi-IN-MadhurNeural', True),      # Hindi male SSML
         ('hi-IN-SwaraNeural', True),       # Hindi female SSML
-        (voice, True),                     # Requested voice with SSML
         (voice, False),                    # Requested voice plain text
         ('hi-IN-MadhurNeural', False),     # Hindi male plain
         ('hi-IN-SwaraNeural', False),      # Hindi female plain
-        ('en-US-GuyNeural', False),        # English fallback
+        ('en-US-GuyNeural', False),        # English last resort only
     ]
     seen = set()
     unique_attempts = []

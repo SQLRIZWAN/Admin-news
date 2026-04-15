@@ -81,7 +81,7 @@ def run(category: str, breaking_only: bool = False) -> bool:
                 if last_post_ts.tzinfo is None:
                     last_post_ts = last_post_ts.replace(tzinfo=timezone.utc)
                 age_min = (datetime.now(timezone.utc) - last_post_ts).total_seconds() / 60
-                if age_min < 25:
+                if age_min < 15:
                     print(f"⏱️   Last post was {age_min:.0f} min ago — skipping to prevent rapid duplicate.")
                     write_automation_log(category, 'skipped', reason=f'posted {age_min:.0f}min ago (anti-rapid-fire)')
                     return False
@@ -104,7 +104,7 @@ def run(category: str, breaking_only: bool = False) -> bool:
     if news_item:
         print("\n🔍  Step 2 — Duplicate check (all categories, last 3 days)...")
         all_recent = get_all_recent_news(days=3)
-        dup = check_duplicate(news_item['title'], all_recent, threshold=0.40)
+        dup = check_duplicate(news_item['title'], all_recent, threshold=0.55)
         if dup['is_duplicate']:
             print(f"      Duplicate ({dup['score']:.2f}): {dup['matched_title'][:60]}")
             write_automation_log(

@@ -35,7 +35,7 @@ def _pexels_search(keyword: str, per_page: int = 6) -> list:
                 'query': keyword,
                 'per_page': per_page,
                 'orientation': 'landscape',
-                'size': 'medium',
+                'size': 'large',   # Request HD clips (720p/1080p) for better quality
             },
             timeout=20,
         )

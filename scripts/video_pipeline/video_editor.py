@@ -17,7 +17,7 @@ if not hasattr(Image, 'ANTIALIAS'):
 from tts import group_subtitles
 
 VIDEO_SIZE = (1280, 720)
-FPS = 25
+FPS = 30
 
 # Font paths to try (Ubuntu GitHub runner has DejaVu fonts)
 FONT_PATHS = [
@@ -236,9 +236,12 @@ def create_video(
         output_path,
         fps=FPS,
         codec='libx264',
+        bitrate='4000k',       # 4 Mbps — good HD quality for 1280×720
         audio_codec='aac',
+        audio_bitrate='192k',  # Clear audio
         temp_audiofile=output_path + '.tmp.m4a',
         remove_temp=True,
+        threads=2,             # Parallel encoding on GitHub Actions runner
         verbose=False,
         logger=None,
     )

@@ -9,6 +9,7 @@ Firebase Admin SDK helpers:
 import os
 import re
 import json
+import time
 import requests
 from datetime import datetime, timezone, timedelta
 
@@ -241,8 +242,20 @@ def post_news(article: dict) -> str:
         'timestamp':    ts,
         'createdAt':    ts,
     }
-    ref = db.collection('news').add(doc)
-    return ref[1].id
+    # Retry up to 3 times with backoff — guards against transient Firestore errors
+    delay = 3
+    last_err = None
+    for attempt in range(3):
+        try:
+            ref = db.collection('news').add(doc)
+            return ref[1].id
+        except Exception as e:
+            last_err = e
+            print(f"   Firestore write attempt {attempt + 1} failed: {e}")
+            if attempt < 2:
+                time.sleep(delay)
+                delay *= 2
+    raise RuntimeError(f"Firestore post_news failed after 3 attempts: {last_err}")
 
 
 # ── Automation config ────────────────────────────────────────────────────────
