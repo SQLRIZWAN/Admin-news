@@ -167,10 +167,11 @@ const firebaseConfig = {
 const app = firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
-// Enable local persistence — after first load, data loads instantly from cache
-// NOTE: experimentalForceLongPolling was REMOVED — it forces slow HTTP polling instead of WebSockets
 try {
-  db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+  db.settings({
+    experimentalForceLongPolling: true,
+    merge: true
+  });
 } catch (e) {}
 const CLOUDINARY = {
   cloudName: 'debp1kjtm',
@@ -1298,9 +1299,9 @@ const Dashboard = () => {
   const [statsLoaded, setStatsLoaded] = useState(false);
   useEffect(() => {
     const u = [];
-    // ── Single news listener: handles count, category counts, breaking + recent ──
-    // One query instead of two = half the Firestore reads on Dashboard load
-    u.push(db.collection('news').orderBy('timestamp', 'desc').limit(100).onSnapshot(s => {
+    // ── News: single listener for both count+category+recent ──────
+    // No orderBy on count query — avoids needing index and is faster
+    u.push(db.collection('news').limit(300).onSnapshot(s => {
       const cc = {};
       let brk = 0;
       s.docs.forEach(d => {
@@ -1314,8 +1315,11 @@ const Dashboard = () => {
         news: s.size,
         breaking: brk
       }));
-      // Use the first 6 for recent news display
-      setRecent(s.docs.slice(0, 6).map(d => ({
+    }, () => {}));
+
+    // Recent news (separate query for display only — limit 6, ordered)
+    u.push(db.collection('news').orderBy('timestamp', 'desc').limit(6).onSnapshot(s => {
+      setRecent(s.docs.map(d => ({
         id: d.id,
         ...d.data()
       })));
@@ -1324,13 +1328,13 @@ const Dashboard = () => {
       setLoading(false);
     }));
 
-    // ── Users, Comments, Ads: one-time get() — no realtime needed ─
-    // Limit kept low to avoid slow large reads; count is shown as-is
-    db.collection('users').limit(500).get().then(s => setStats(p => ({
+    // ── Users, Comments, Ads: one-time get() instead of onSnapshot ─
+    // These don't need realtime. get() is faster and cheaper.
+    db.collection('users').limit(5000).get().then(s => setStats(p => ({
       ...p,
       users: s.size
     }))).catch(() => {});
-    db.collection('comments').limit(500).get().then(s => setStats(p => ({
+    db.collection('comments').limit(5000).get().then(s => setStats(p => ({
       ...p,
       comments: s.size
     }))).catch(() => {});
@@ -2653,15 +2657,16 @@ const NewsManager = ({
   const [editing, setEditing] = useState(null);
   const [formInit, setFormInit] = useState(BLANK);
   const [confirm, setConfirm] = useState(null);
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState(''); // raw input (debounced)
+  const [search, setSearch] = useState(''); // debounced value used in filter
   const [cat, setCat] = useState(initCat);
   const [statusFilter, setStatusFilter] = useState('published'); // 'published' | 'draft' | 'all'
   const [videoPlayId, setVideoPlayId] = useState(null); // which article video is playing
-
+  const [displayCount, setDisplayCount] = useState(40); // virtual cap for large lists
+  const searchDebounceRef = useRef(null);
   useEffect(() => {
     // Try ordered query first; if Firestore index missing, fallback to unordered
-    // limit(50) — sufficient for admin list; reduces initial payload by 50%
-    let u = db.collection('news').orderBy('timestamp', 'desc').limit(50).onSnapshot(s => {
+    let u = db.collection('news').orderBy('timestamp', 'desc').limit(100).onSnapshot(s => {
       setNews(s.docs.map(d => ({
         id: d.id,
         ...d.data()
@@ -2669,7 +2674,7 @@ const NewsManager = ({
       setLoading(false);
     }, _err => {
       // Fallback: unordered query (no index needed)
-      u = db.collection('news').limit(50).onSnapshot(s => {
+      u = db.collection('news').limit(100).onSnapshot(s => {
         setNews(s.docs.map(d => ({
           id: d.id,
           ...d.data()
@@ -2802,8 +2807,15 @@ const NewsManager = ({
   })), /*#__PURE__*/React.createElement("input", {
     className: "inp",
     placeholder: "Search articles by title\u2026",
-    value: search,
-    onChange: e => setSearch(e.target.value),
+    value: searchInput,
+    onChange: e => {
+      setSearchInput(e.target.value);
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = setTimeout(() => {
+        setSearch(e.target.value);
+        setDisplayCount(40);
+      }, 220);
+    },
     style: {
       paddingLeft: 40
     }
@@ -2961,7 +2973,7 @@ const NewsManager = ({
   }, /*#__PURE__*/React.createElement(Ic, {
     n: "plus",
     s: 14
-  }), " Add Article")) : filtered.map(n => /*#__PURE__*/React.createElement(React.Fragment, {
+  }), " Add Article")) : filtered.slice(0, displayCount).map(n => /*#__PURE__*/React.createElement(React.Fragment, {
     key: n.id
   }, /*#__PURE__*/React.createElement("div", {
     className: "row",
@@ -3175,7 +3187,20 @@ const NewsManager = ({
       toast.add('Video load failed', 'error');
       setVideoPlayId(null);
     }
-  }))))));
+  })))), filtered.length > displayCount && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '16px',
+      textAlign: 'center',
+      borderTop: '1px solid var(--border)'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-ghost",
+    style: {
+      fontSize: 13,
+      padding: '9px 22px'
+    },
+    onClick: () => setDisplayCount(c => c + 20)
+  }, "Load 20 more (", filtered.length - displayCount, " remaining)"))));
 };
 
 // ── ADS MANAGER ────────────────────────────────────────────────
@@ -4919,12 +4944,19 @@ const AutomationPage = ({
   };
 
   // ── API health checks ────────────────────────────────────────
+  const API_CACHE_KEY = 'kwt_api_status_v1';
+  const API_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   const checkApis = async () => {
     setRefreshingApi(true);
-    const upd = s => setApiStatus(p => ({
-      ...p,
-      ...s
-    }));
+    const results = {};
+    const upd = s => {
+      Object.assign(results, s);
+      setApiStatus(p => ({
+        ...p,
+        ...s
+      }));
+    };
     // Firebase
     try {
       await db.collection('news').limit(1).get();
@@ -4985,9 +5017,26 @@ const AutomationPage = ({
       }
     }
     setRefreshingApi(false);
+    // Save results to cache
+    try {
+      localStorage.setItem(API_CACHE_KEY, JSON.stringify({
+        ts: Date.now(),
+        data: results
+      }));
+    } catch (_) {}
   };
   useEffect(() => {
-    checkApis();
+    // Load cached API status first (avoids slow network calls on every tab switch)
+    try {
+      const cached = JSON.parse(localStorage.getItem(API_CACHE_KEY) || 'null');
+      if (cached && Date.now() - cached.ts < API_CACHE_TTL) {
+        setApiStatus(cached.data);
+      } else {
+        checkApis();
+      }
+    } catch (_) {
+      checkApis();
+    }
     fetchGhRuns();
   }, []);
 
@@ -6305,14 +6354,14 @@ const LogosManager = ({
   const [phoneUploading, setPhoneUploading] = useState(false);
   const phoneInputRef = useRef(null);
   useEffect(() => {
-    const u = db.collection('logos').orderBy('name').onSnapshot(s => {
+    // Logos change rarely — one-time get() avoids a persistent WebSocket listener
+    db.collection('logos').orderBy('name').get().then(s => {
       setLogos(s.docs.map(d => ({
         id: d.id,
         ...d.data()
       })));
       setLoading(false);
-    }, () => setLoading(false));
-    return () => u();
+    }).catch(() => setLoading(false));
   }, []);
 
   // ── Domain → Clearbit logo ──────────────────────────────────
@@ -9438,6 +9487,815 @@ Return ONLY valid JSON (no markdown, no code blocks):
   }, "\u2B07\uFE0F Download Video")))))));
 };
 
+// ── MEDIA MANAGER (Social Media Hub) ─────────────────────────
+const MediaManager = ({
+  toast
+}) => {
+  const PLATFORMS = [{
+    id: 'instagram',
+    label: 'Instagram',
+    color: '#E1306C',
+    bg: 'rgba(225,48,108,.1)',
+    border: 'rgba(225,48,108,.25)',
+    icon: /*#__PURE__*/React.createElement("svg", {
+      width: "22",
+      height: "22",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("rect", {
+      x: "2",
+      y: "2",
+      width: "20",
+      height: "20",
+      rx: "5",
+      ry: "5"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "17.5",
+      y1: "6.5",
+      x2: "17.51",
+      y2: "6.5"
+    })),
+    tokenLabel: 'Session Cookie (JSON)',
+    tokenHelp: 'Open Instagram in Chrome → DevTools → Application → Cookies → copy sessionid cookie value as JSON: {"sessionid":"..."}',
+    tokenField: 'cookieData',
+    hasPageId: false
+  }, {
+    id: 'youtube',
+    label: 'YouTube',
+    color: '#FF0000',
+    bg: 'rgba(255,0,0,.08)',
+    border: 'rgba(255,0,0,.22)',
+    icon: /*#__PURE__*/React.createElement("svg", {
+      width: "22",
+      height: "22",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.6C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"
+    }), /*#__PURE__*/React.createElement("polygon", {
+      points: "9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"
+    })),
+    tokenLabel: 'OAuth Refresh Token',
+    tokenHelp: 'Go to Google OAuth Playground → authorize YouTube Data API v3 → copy Refresh Token here',
+    tokenField: 'accessToken',
+    hasPageId: false
+  }, {
+    id: 'facebook',
+    label: 'Facebook',
+    color: '#1877F2',
+    bg: 'rgba(24,119,242,.08)',
+    border: 'rgba(24,119,242,.22)',
+    icon: /*#__PURE__*/React.createElement("svg", {
+      width: "22",
+      height: "22",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"
+    })),
+    tokenLabel: 'Page Access Token',
+    tokenHelp: 'Go to Facebook Developers → Graph API Explorer → select your page → generate Page Access Token',
+    tokenField: 'accessToken',
+    hasPageId: true
+  }, {
+    id: 'tiktok',
+    label: 'TikTok',
+    color: '#69C9D0',
+    bg: 'rgba(105,201,208,.08)',
+    border: 'rgba(105,201,208,.22)',
+    icon: /*#__PURE__*/React.createElement("svg", {
+      width: "22",
+      height: "22",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"
+    })),
+    tokenLabel: 'Session Cookies (JSON)',
+    tokenHelp: 'Open TikTok in Chrome → DevTools → Application → Cookies → export as JSON using Cookie Editor extension',
+    tokenField: 'cookieData',
+    hasPageId: false
+  }, {
+    id: 'x',
+    label: 'X (Twitter)',
+    color: '#888',
+    bg: 'rgba(136,136,136,.08)',
+    border: 'rgba(136,136,136,.22)',
+    icon: /*#__PURE__*/React.createElement("svg", {
+      width: "22",
+      height: "22",
+      viewBox: "0 0 24 24",
+      fill: "currentColor",
+      stroke: "none"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+    })),
+    tokenLabel: 'API Tokens (key|secret|access|access_secret)',
+    tokenHelp: 'Go to developer.twitter.com → your app → Keys and Tokens → paste as: API_KEY|API_SECRET|ACCESS_TOKEN|ACCESS_SECRET',
+    tokenField: 'accessToken',
+    hasPageId: false
+  }];
+  const [activeTab, setActiveTab] = useState('accounts');
+  const [accounts, setAccounts] = useState({});
+  const [queue, setQueue] = useState([]);
+  const [loadingAcc, setLoadingAcc] = useState(true);
+  const [loadingQ, setLoadingQ] = useState(true);
+  const [editing, setEditing] = useState(null); // platform id
+  const [editForm, setEditForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [videos, setVideos] = useState([]);
+  const [loadingVid, setLoadingVid] = useState(true);
+
+  // ── Firestore: social accounts ───────────────────────────────
+  useEffect(() => {
+    const unsub = db.collection('social_accounts').onSnapshot(snap => {
+      const map = {};
+      snap.docs.forEach(d => {
+        map[d.id] = {
+          id: d.id,
+          ...d.data()
+        };
+      });
+      setAccounts(map);
+      setLoadingAcc(false);
+    }, () => setLoadingAcc(false));
+    return () => unsub();
+  }, []);
+
+  // ── Firestore: auto-posted videos ────────────────────────────
+  useEffect(() => {
+    const unsub = db.collection('news').where('autoPosted', '==', true).orderBy('timestamp', 'desc').limit(30).onSnapshot(snap => {
+      setVideos(snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      })));
+      setLoadingVid(false);
+    }, () => setLoadingVid(false));
+    return () => unsub();
+  }, []);
+
+  // ── Firestore: social media queue ────────────────────────────
+  useEffect(() => {
+    if (activeTab !== 'queue') return;
+    const unsub = db.collection('social_media_queue').orderBy('createdAt', 'desc').limit(30).onSnapshot(snap => {
+      setQueue(snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      })));
+      setLoadingQ(false);
+    }, () => setLoadingQ(false));
+    return () => unsub();
+  }, [activeTab]);
+  const openEdit = p => {
+    const acc = accounts[p.id] || {};
+    setEditForm({
+      username: acc.username || '',
+      accessToken: acc.accessToken || '',
+      cookieData: typeof acc.cookieData === 'object' && acc.cookieData ? JSON.stringify(acc.cookieData, null, 2) : acc.cookieData || '',
+      pageId: acc.pageId || '',
+      notes: acc.notes || ''
+    });
+    setEditing(p.id);
+  };
+  const saveAccount = async (platformId, plat) => {
+    setSaving(true);
+    try {
+      const fd = editForm;
+      let cookieData = null;
+      if (plat.tokenField === 'cookieData' && fd.cookieData.trim()) {
+        try {
+          cookieData = JSON.parse(fd.cookieData);
+        } catch {
+          cookieData = fd.cookieData;
+        } // store as string if not valid JSON
+      }
+      await db.collection('social_accounts').doc(platformId).set({
+        platform: platformId,
+        connected: true,
+        username: fd.username.trim(),
+        accessToken: plat.tokenField === 'accessToken' ? fd.accessToken.trim() : accounts[platformId]?.accessToken || '',
+        cookieData: cookieData,
+        pageId: fd.pageId.trim() || null,
+        notes: fd.notes.trim(),
+        connectedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, {
+        merge: true
+      });
+      toast.add(`${plat.label} connected!`, 'ok');
+      setEditing(null);
+    } catch (e) {
+      toast.add('Save failed: ' + e.message, 'error');
+    }
+    setSaving(false);
+  };
+  const disconnectAccount = async (platformId, label) => {
+    try {
+      await db.collection('social_accounts').doc(platformId).set({
+        connected: false,
+        accessToken: '',
+        cookieData: null,
+        disconnectedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, {
+        merge: true
+      });
+      toast.add(`${label} disconnected`, 'ok');
+    } catch (e) {
+      toast.add('Error: ' + e.message, 'error');
+    }
+  };
+  const fmtStatus = (results, plat) => {
+    if (!results) return null;
+    const r = results[plat];
+    if (!r) return null;
+    return r.success ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: 'var(--success)',
+        fontWeight: 700,
+        fontSize: 11
+      }
+    }, "\u2713 Posted") : /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: 'var(--danger)',
+        fontWeight: 700,
+        fontSize: 11
+      }
+    }, "\u2717 Failed");
+  };
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontFamily: 'Outfit',
+      fontWeight: 800,
+      fontSize: 20,
+      marginBottom: 4
+    }
+  }, "Media Hub"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: 'var(--muted)',
+      fontSize: 13
+    }
+  }, "Connect social accounts & track auto-uploads")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      marginBottom: 20,
+      borderBottom: '1px solid var(--border)',
+      paddingBottom: 12
+    }
+  }, ['accounts', 'queue', 'videos'].map(t => /*#__PURE__*/React.createElement("button", {
+    key: t,
+    onClick: () => setActiveTab(t),
+    style: {
+      padding: '7px 16px',
+      borderRadius: 8,
+      border: 'none',
+      cursor: 'pointer',
+      fontFamily: 'Outfit',
+      fontWeight: 600,
+      fontSize: 13,
+      background: activeTab === t ? 'var(--accent)' : 'var(--surface2)',
+      color: activeTab === t ? '#050c18' : 'var(--text)'
+    }
+  }, t === 'accounts' ? '🔗 Accounts' : t === 'queue' ? '📤 Upload Queue' : '🎬 Videos'))), activeTab === 'accounts' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gap: 14
+    }
+  }, PLATFORMS.map(p => {
+    const acc = accounts[p.id] || {};
+    const connected = acc.connected && (acc.accessToken || acc.cookieData);
+    const isEditing = editing === p.id;
+    return /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      className: "card",
+      style: {
+        padding: 0,
+        overflow: 'hidden',
+        border: `1px solid ${connected ? p.border : 'var(--border)'}`,
+        borderRadius: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '14px 16px',
+        background: connected ? p.bg : 'transparent'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 42,
+        height: 42,
+        borderRadius: 12,
+        background: connected ? p.bg : 'var(--surface2)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: connected ? p.color : 'var(--muted)',
+        border: `1.5px solid ${connected ? p.border : 'var(--border)'}`
+      }
+    }, p.icon), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontWeight: 700,
+        fontSize: 15
+      }
+    }, p.label), /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 7,
+        height: 7,
+        borderRadius: '50%',
+        background: connected ? 'var(--success)' : 'var(--danger)',
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        fontWeight: 600,
+        color: connected ? 'var(--success)' : 'var(--danger)'
+      }
+    }, connected ? 'Connected' : 'Disconnected')), connected && acc.username && /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 12,
+        color: 'var(--muted)',
+        marginTop: 2
+      }
+    }, "@", acc.username), connected && acc.lastPostedAt && /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: 'var(--dim)',
+        marginTop: 1
+      }
+    }, "Last post: ", timeAgo(acc.lastPostedAt))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 8,
+        flexShrink: 0
+      }
+    }, connected && /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      style: {
+        fontSize: 12,
+        padding: '6px 12px',
+        color: 'var(--danger)'
+      },
+      onClick: () => disconnectAccount(p.id, p.label)
+    }, "Disconnect"), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-accent",
+      style: {
+        fontSize: 12,
+        padding: '6px 14px'
+      },
+      onClick: () => isEditing ? setEditing(null) : openEdit(p)
+    }, isEditing ? 'Cancel' : connected ? 'Edit' : 'Connect'))), isEditing && /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '14px 16px',
+        borderTop: '1px solid var(--border)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: 'var(--dim)',
+        letterSpacing: '.05em',
+        marginBottom: 4
+      }
+    }, "USERNAME / HANDLE"), /*#__PURE__*/React.createElement("input", {
+      className: "inp",
+      style: {
+        fontSize: 13
+      },
+      placeholder: `@${p.id}account`,
+      value: editForm.username,
+      onChange: e => setEditForm(f => ({
+        ...f,
+        username: e.target.value
+      }))
+    })), p.hasPageId && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: 'var(--dim)',
+        letterSpacing: '.05em',
+        marginBottom: 4
+      }
+    }, "PAGE ID (Facebook)"), /*#__PURE__*/React.createElement("input", {
+      className: "inp",
+      style: {
+        fontSize: 13
+      },
+      placeholder: "123456789...",
+      value: editForm.pageId,
+      onChange: e => setEditForm(f => ({
+        ...f,
+        pageId: e.target.value
+      }))
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: 'var(--dim)',
+        letterSpacing: '.05em',
+        marginBottom: 4
+      }
+    }, p.tokenLabel.toUpperCase()), /*#__PURE__*/React.createElement("textarea", {
+      className: "inp",
+      rows: 3,
+      style: {
+        fontSize: 12,
+        fontFamily: 'monospace',
+        resize: 'vertical'
+      },
+      placeholder: p.tokenField === 'cookieData' ? '{"sessionid":"abc123..."}' : 'paste token here...',
+      value: p.tokenField === 'cookieData' ? editForm.cookieData : editForm.accessToken,
+      onChange: e => setEditForm(f => ({
+        ...f,
+        [p.tokenField === 'cookieData' ? 'cookieData' : 'accessToken']: e.target.value
+      }))
+    }), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: 'var(--dim)',
+        marginTop: 4,
+        lineHeight: 1.4
+      }
+    }, p.tokenHelp)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: 'var(--dim)',
+        letterSpacing: '.05em',
+        marginBottom: 4
+      }
+    }, "NOTES (optional)"), /*#__PURE__*/React.createElement("input", {
+      className: "inp",
+      style: {
+        fontSize: 13
+      },
+      placeholder: "e.g. refresh every 30 days...",
+      value: editForm.notes,
+      onChange: e => setEditForm(f => ({
+        ...f,
+        notes: e.target.value
+      }))
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-accent",
+      style: {
+        flex: 1,
+        fontSize: 13
+      },
+      onClick: () => saveAccount(p.id, p),
+      disabled: saving
+    }, saving ? 'Saving...' : '💾 Save & Connect'), /*#__PURE__*/React.createElement("button", {
+      className: "btn btn-ghost",
+      style: {
+        fontSize: 13
+      },
+      onClick: () => setEditing(null)
+    }, "Cancel"))));
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      marginTop: 16,
+      padding: '12px 16px'
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: 'var(--dim)',
+      letterSpacing: '.05em',
+      marginBottom: 10
+    }
+  }, "CONNECTION STATUS"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 8
+    }
+  }, PLATFORMS.map(p => {
+    const acc = accounts[p.id] || {};
+    const ok = acc.connected && (acc.accessToken || acc.cookieData);
+    return /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '5px 12px',
+        borderRadius: 999,
+        background: ok ? 'rgba(52,211,153,.08)' : 'rgba(248,113,113,.08)',
+        border: `1px solid ${ok ? 'rgba(52,211,153,.25)' : 'rgba(248,113,113,.25)'}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 6,
+        height: 6,
+        borderRadius: '50%',
+        background: ok ? 'var(--success)' : 'var(--danger)'
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: ok ? 'var(--success)' : 'var(--danger)'
+      }
+    }, p.label));
+  })))), activeTab === 'videos' && /*#__PURE__*/React.createElement("div", null, loadingVid ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      padding: 40,
+      color: 'var(--muted)'
+    }
+  }, "Loading videos...") : videos.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      padding: 40,
+      color: 'var(--muted)'
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    n: "video",
+    s: 40,
+    c: "var(--border2)"
+  }), /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 12,
+      fontSize: 14
+    }
+  }, "No auto-published videos yet"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: 'var(--dim)',
+      marginTop: 4
+    }
+  }, "Run automation to generate news videos")) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gap: 14
+    }
+  }, videos.map(v => {
+    const qEntry = queue.find(q => q.newsId === v.id);
+    return /*#__PURE__*/React.createElement("div", {
+      key: v.id,
+      className: "card",
+      style: {
+        padding: 0,
+        overflow: 'hidden'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 12,
+        padding: 14
+      }
+    }, v.thumbnail && /*#__PURE__*/React.createElement("img", {
+      src: v.thumbnail,
+      alt: "",
+      loading: "lazy",
+      style: {
+        width: 100,
+        height: 64,
+        objectFit: 'cover',
+        borderRadius: 8,
+        flexShrink: 0,
+        background: 'var(--surface2)'
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontWeight: 600,
+        fontSize: 13,
+        lineHeight: 1.4,
+        marginBottom: 4,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }
+    }, v.title), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 6,
+        flexWrap: 'wrap',
+        alignItems: 'center'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: 'var(--muted)'
+      }
+    }, timeAgo(v.timestamp)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: 'var(--muted)'
+      }
+    }, "\xB7"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: 'var(--muted)'
+      }
+    }, v.category), v.videoUrl && /*#__PURE__*/React.createElement("a", {
+      href: v.videoUrl,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      style: {
+        fontSize: 11,
+        color: 'var(--accent)',
+        fontWeight: 600
+      }
+    }, "\u25B6 View")), qEntry?.results && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 5,
+        marginTop: 6,
+        flexWrap: 'wrap'
+      }
+    }, PLATFORMS.map(p => {
+      const r = qEntry.results[p.id];
+      if (!r) return null;
+      return /*#__PURE__*/React.createElement("span", {
+        key: p.id,
+        style: {
+          fontSize: 10,
+          fontWeight: 700,
+          padding: '2px 7px',
+          borderRadius: 999,
+          background: r.success ? 'rgba(52,211,153,.12)' : 'rgba(248,113,113,.12)',
+          color: r.success ? 'var(--success)' : 'var(--danger)',
+          border: `1px solid ${r.success ? 'rgba(52,211,153,.3)' : 'rgba(248,113,113,.3)'}`
+        }
+      }, r.success ? '✓' : '✗', " ", p.label);
+    })))));
+  }))), activeTab === 'queue' && /*#__PURE__*/React.createElement("div", null, loadingQ ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      padding: 40,
+      color: 'var(--muted)'
+    }
+  }, "Loading queue...") : queue.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      padding: 40,
+      color: 'var(--muted)'
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    n: "send",
+    s: 40,
+    c: "var(--border2)"
+  }), /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 12,
+      fontSize: 14
+    }
+  }, "Upload queue is empty"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: 'var(--dim)',
+      marginTop: 4
+    }
+  }, "Social uploads will appear here after automation runs")) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gap: 12
+    }
+  }, queue.map(q => {
+    const statusColor = q.status === 'completed' ? 'var(--success)' : q.status === 'processing' ? 'var(--accent)' : 'var(--muted)';
+    const successCount = q.results ? Object.values(q.results).filter(r => r?.success).length : 0;
+    const totalCount = q.platforms?.length || 0;
+    return /*#__PURE__*/React.createElement("div", {
+      key: q.id,
+      className: "card",
+      style: {
+        padding: '12px 14px'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontWeight: 600,
+        fontSize: 13,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }
+    }, q.newsTitle || 'Untitled'), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: 'var(--muted)',
+        marginTop: 2
+      }
+    }, fmtDate(q.createdAt))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 7,
+        height: 7,
+        borderRadius: '50%',
+        background: statusColor
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: statusColor,
+        textTransform: 'capitalize'
+      }
+    }, q.status))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 5,
+        flexWrap: 'wrap'
+      }
+    }, (q.platforms || []).map(pid => {
+      const plat = PLATFORMS.find(p => p.id === pid);
+      const r = q.results?.[pid];
+      if (!plat) return null;
+      return /*#__PURE__*/React.createElement("div", {
+        key: pid,
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '3px 9px',
+          borderRadius: 999,
+          background: r?.success ? 'rgba(52,211,153,.1)' : r ? 'rgba(248,113,113,.1)' : 'var(--surface2)',
+          border: `1px solid ${r?.success ? 'rgba(52,211,153,.3)' : r ? 'rgba(248,113,113,.3)' : 'var(--border)'}`
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 10,
+          fontWeight: 700,
+          color: r?.success ? 'var(--success)' : r ? 'var(--danger)' : 'var(--muted)'
+        }
+      }, r?.success ? '✓' : r ? '✗' : '⏳', " ", plat.label));
+    })), q.status === 'completed' && /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: 'var(--dim)',
+        marginTop: 6
+      }
+    }, successCount, "/", totalCount, " platforms posted successfully"));
+  }))));
+};
+
 // ── PAGES CONFIG ──────────────────────────────────────────────
 const PAGES = [{
   id: 'dashboard',
@@ -9455,6 +10313,10 @@ const PAGES = [{
   id: 'automation',
   label: 'Auto',
   icon: 'bot'
+}, {
+  id: 'media',
+  label: 'Media',
+  icon: 'video'
 }, {
   id: 'logos',
   label: 'Logos',
@@ -9541,6 +10403,8 @@ const Layout = ({
         return /*#__PURE__*/React.createElement(AutomationPage, p);
       case 'logos':
         return /*#__PURE__*/React.createElement(LogosManager, p);
+      case 'media':
+        return /*#__PURE__*/React.createElement(MediaManager, p);
       case 'settings':
         return /*#__PURE__*/React.createElement(SettingsPage, _extends({
           user: user
@@ -9949,6 +10813,7 @@ const App = () => {
   });
 };
 createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(App, null));
+
 </script>
 </body>
 </html>
