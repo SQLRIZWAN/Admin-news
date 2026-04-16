@@ -46,6 +46,21 @@ def _clean_for_tts(script: str) -> str:
     s = re.sub(r'^[\*\-\+]\s+', '', s, flags=re.MULTILINE)
     # Strip bold/italic markers but keep text
     s = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', s)
+    # Strip URLs (http/https)
+    s = re.sub(r'https?://\S+', ' ', s)
+    s = re.sub(r'ftp://\S+', ' ', s)
+    # Strip version strings: v1.0, v2.5-flash, v1beta, 2.5.0
+    s = re.sub(r'\bv\d+[\w.\-]*\b', ' ', s)
+    # Strip AI model name references (Gemini, GPT, Claude, etc.)
+    s = re.sub(r'\b(gemini|gpt|claude|llama|mistral|deepseek|openai)[-\s]?[\w.\-]*\b', ' ', s, flags=re.IGNORECASE)
+    # Strip parenthetical stage directions: (speaker version), (male voice), (pause here)
+    s = re.sub(r'\([^)]{1,60}\)', ' ', s)
+    # Strip square-bracket annotations: [pause], [emphasis], [break]
+    s = re.sub(r'\[[^\]]{1,40}\]', ' ', s)
+    # Strip residual XML/SSML tags that may slip through
+    s = re.sub(r'<[^>]{1,80}>', ' ', s)
+    # Strip stray code characters
+    s = re.sub(r'[{}|\\]', ' ', s)
     # Collapse whitespace
     s = ' '.join(s.split())
     return s.strip()

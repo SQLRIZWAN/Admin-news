@@ -10,7 +10,7 @@ jobs:
   post-news:
     name: Kuwait News Video
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -32,4 +32,8 @@ jobs:
           PEXELS_API_KEY:           ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY:          ${{ secrets.PIXABAY_API_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          YOUTUBE_CLIENT_ID:        ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET:    ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          X_API_KEY:                ${{ secrets.X_API_KEY }}
+          X_API_SECRET:             ${{ secrets.X_API_SECRET }}
         run: python scripts/video_pipeline/main.py --category=kuwait

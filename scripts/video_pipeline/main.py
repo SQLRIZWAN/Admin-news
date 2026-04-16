@@ -32,10 +32,13 @@ from firebase_poster import (
     get_all_recent_news,
     check_duplicate,
     get_source_logo,
+    get_used_thumbnail_urls,
     post_news,
     write_automation_log,
     get_automation_config,
     update_automation_config,
+    acquire_pipeline_lock,
+    release_pipeline_lock,
 )
 
 
@@ -63,6 +66,12 @@ def run(category: str, breaking_only: bool = False) -> bool:
     if not auto_cfg.get('enabled', True):
         print("⏸️   Automation disabled for this category — skipping.")
         write_automation_log(category, 'skipped', reason='automation disabled')
+        return False
+
+    # ── 1c. Pipeline lock (prevent parallel duplicate posts) ─────────────────
+    if not acquire_pipeline_lock(category, ttl_seconds=600):
+        print(f"🔒  Pipeline lock held by another run for '{category}' — skipping.")
+        write_automation_log(category, 'skipped', reason='pipeline lock held by another run')
         return False
 
     # ── 1b. Anti-rapid-fire: skip if we posted this category in the last 25 min ─
@@ -162,7 +171,8 @@ def run(category: str, breaking_only: bool = False) -> bool:
         # ── 7. Thumbnail from Pixabay ────────────────────────────────────────
         print("\n🖼️   Step 6 — Getting thumbnail...")
         thumb_keyword = script_data.get('image_keyword') or cfg['search_keyword']
-        pixabay_url = get_pixabay_image(thumb_keyword)
+        used_thumb_urls = get_used_thumbnail_urls(days=14)
+        pixabay_url = get_pixabay_image(thumb_keyword, used_urls=used_thumb_urls)
         thumbnail_url = upload_image_from_url(pixabay_url)
         print(f"      Thumbnail: {thumbnail_url[:70]}")
 
@@ -180,6 +190,7 @@ def run(category: str, breaking_only: bool = False) -> bool:
             source_name=source_name,
             category_label=cfg['label'],
             category_color=cfg['color'],
+            title=script_data['title'],
         )
 
         # ── 9. Upload to Cloudinary ──────────────────────────────────────────
@@ -230,6 +241,24 @@ def run(category: str, breaking_only: bool = False) -> bool:
             'lastNewsId':  news_id,
         })
         write_automation_log(category, 'posted', news_id=news_id, reason='posted successfully')
+
+        # ── 13. Social media posting ─────────────────────────────────────────
+        print("\n📱  Step 11 — Posting to social media (non-fatal)...")
+        try:
+            from social_poster import post_to_all_platforms
+            post_to_all_platforms(
+                news_id=news_id,
+                news_title=script_data['title'],
+                video_path=video_path,
+                video_url=video_url,
+                thumbnail_url=thumbnail_url,
+                description=content[:1000],
+            )
+        except Exception as e:
+            print(f"   ⚠️  Social posting error (non-fatal): {e}")
+
+    # Release pipeline lock so next scheduled run can proceed
+    release_pipeline_lock(category)
 
     _banner(f"✅  Pipeline complete — {cfg['label']}")
     return True

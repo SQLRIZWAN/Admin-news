@@ -10,3 +10,9 @@ imageio>=2.9.0,<2.29.0
 imageio-ffmpeg>=0.4.9
 tqdm>=4.65.0
 proglog>=0.1.9
+# Social media posting
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+instagrapi>=2.0.0
+tweepy>=4.14.0

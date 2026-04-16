@@ -286,7 +286,7 @@ Return ONLY valid JSON (no markdown code blocks):
   "title": "Hindi headline",
   "summary": "2-3 sentence Hindi summary",
   "content": "Full article body (300-500 words)",
-  "script": "55-65 word Hindi spoken narration in Devanagari — ONLY speech text, NO JSON or code",
+  "script": "55-65 word Hindi spoken narration in Devanagari — ONLY speech text. NO model names, NO version numbers, NO URLs, NO code, NO parenthetical directions, NO JSON",
   "keywords": ["visual scene 1", "visual scene 2", "visual scene 3"],
   "subtitle_lines": ["Hindi line one", "Hindi line two", "Hindi line three", "Hindi line four"],
   "image_keyword": "english thumbnail keyword",

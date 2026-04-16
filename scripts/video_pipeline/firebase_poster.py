@@ -106,6 +106,34 @@ def get_all_recent_news(days: int = 3) -> list:
         return []
 
 
+def get_used_thumbnail_urls(days: int = 14) -> set:
+    """
+    Return the set of Pixabay thumbnail URLs used in the last N days.
+    Used by clip_fetcher to prevent identical thumbnails across articles.
+    """
+    try:
+        db = _get_db()
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        snap = (
+            db.collection('news')
+            .where('timestamp', '>=', since)
+            .order_by('timestamp', direction=firestore.Query.DESCENDING)
+            .limit(200)
+            .get()
+        )
+        urls = set()
+        for doc in snap:
+            d = doc.to_dict()
+            for field in ('thumbnail', 'imageUrl'):
+                url = d.get(field, '')
+                if url and 'pixabay' in url.lower():
+                    urls.add(url)
+        return urls
+    except Exception as e:
+        print(f"   ⚠️  get_used_thumbnail_urls error: {e}")
+        return set()
+
+
 def check_duplicate(new_title: str, existing: list, threshold: float = 0.45) -> dict:
     """
     Returns {'is_duplicate': bool, 'matched_title': str, 'score': float}.
@@ -256,6 +284,61 @@ def post_news(article: dict) -> str:
                 time.sleep(delay)
                 delay *= 2
     raise RuntimeError(f"Firestore post_news failed after 3 attempts: {last_err}")
+
+
+# ── Pipeline lock (prevents parallel duplicate posts) ────────────────────────
+
+def acquire_pipeline_lock(category: str, ttl_seconds: int = 600) -> bool:
+    """
+    Atomic Firestore transaction lock to prevent parallel pipeline runs
+    from posting the same category simultaneously (e.g. run-all.yml matrix).
+    Returns True if the lock was acquired, False if another run holds it.
+    Fails open (returns True) if Firestore is unavailable — better to post
+    than silently skip.
+    """
+    try:
+        db = _get_db()
+        lock_ref = db.collection('pipeline_locks').document(category)
+
+        @firestore.transactional
+        def _try_acquire(transaction):
+            snap = lock_ref.get(transaction=transaction)
+            now = datetime.now(timezone.utc)
+            if snap.exists:
+                data = snap.to_dict()
+                expires_at = data.get('expires_at')
+                if expires_at:
+                    if isinstance(expires_at, str):
+                        try:
+                            expires_at = datetime.fromisoformat(expires_at)
+                        except Exception:
+                            expires_at = None
+                    if expires_at:
+                        if expires_at.tzinfo is None:
+                            expires_at = expires_at.replace(tzinfo=timezone.utc)
+                        if expires_at > now:
+                            return False  # lock held by another run
+            expires = now + timedelta(seconds=ttl_seconds)
+            transaction.set(lock_ref, {
+                'category': category,
+                'acquired_at': now.isoformat(),
+                'expires_at': expires.isoformat(),
+                'run_id': os.environ.get('GITHUB_RUN_ID', 'local'),
+            })
+            return True
+
+        return _try_acquire(db.transaction())
+    except Exception as e:
+        print(f"   ⚠️  Pipeline lock error (fail-open): {e}")
+        return True  # fail open — post rather than silently skip
+
+
+def release_pipeline_lock(category: str) -> None:
+    """Release the pipeline lock for the given category after a successful run."""
+    try:
+        _get_db().collection('pipeline_locks').document(category).delete()
+    except Exception:
+        pass
 
 
 # ── Automation config ────────────────────────────────────────────────────────

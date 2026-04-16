@@ -7,7 +7,7 @@ jobs:
   run-category:
     name: "▶ ${{ matrix.category }}"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       matrix:
         category: [kuwait, world, kuwait-jobs, kuwait-offers, funny-news-meme]
@@ -30,8 +30,12 @@ jobs:
 
       - name: Run pipeline — ${{ matrix.category }}
         env:
-          GEMINI_API_KEY:          ${{ secrets.GEMINI_API_KEY }}
-          PEXELS_API_KEY:          ${{ secrets.PEXELS_API_KEY }}
-          PIXABAY_API_KEY:         ${{ secrets.PIXABAY_API_KEY }}
+          GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY:           ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY:          ${{ secrets.PIXABAY_API_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          YOUTUBE_CLIENT_ID:        ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET:    ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          X_API_KEY:                ${{ secrets.X_API_KEY }}
+          X_API_SECRET:             ${{ secrets.X_API_SECRET }}
         run: python scripts/video_pipeline/main.py --category=${{ matrix.category }}
