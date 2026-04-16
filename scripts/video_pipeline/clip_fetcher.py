@@ -147,10 +147,11 @@ def download_clips(keywords: list, dest_dir: str, max_clips: int = 5) -> list:
     return clip_paths
 
 
-def get_pixabay_image(keyword: str) -> str:
+def get_pixabay_image(keyword: str, used_urls: set = None) -> str:
     """
     Get a news-relevant Pixabay image URL for use as thumbnail.
     Tries multiple keyword variations to avoid unrelated images.
+    Pass used_urls (set of already-used Pixabay URLs) to avoid duplicate thumbnails.
     """
     key = os.environ.get('PIXABAY_API_KEY', '')
     if not key:
@@ -195,9 +196,14 @@ def get_pixabay_image(keyword: str) -> str:
             data = res.json()
             hits = data.get('hits', [])
             if hits:
-                # Pick randomly from top 3 results to avoid always same thumbnail
-                pick = random.randint(0, min(2, len(hits) - 1))
-                url = hits[pick].get('largeImageURL') or hits[pick].get('webformatURL', '')
+                # Filter out already-used URLs to avoid duplicate thumbnails
+                available = [
+                    h for h in hits
+                    if h.get('largeImageURL', '') not in (used_urls or set())
+                       and h.get('webformatURL', '') not in (used_urls or set())
+                ] or hits  # fallback: ignore exclusion if all results are used
+                pick = random.randint(0, min(2, len(available) - 1))
+                url = available[pick].get('largeImageURL') or available[pick].get('webformatURL', '')
                 if url:
                     print(f"   Thumbnail: '{q}' → found (hit #{pick+1})")
                     return url

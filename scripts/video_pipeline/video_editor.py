@@ -53,7 +53,7 @@ def _make_subtitle_frame(text: str, size: tuple = VIDEO_SIZE) -> np.ndarray:
     th = bbox[3] - bbox[1]
 
     x = (size[0] - tw) // 2
-    y = size[1] - th - 55
+    y = size[1] - th - 115   # raised 60px to clear lower-third chyron + ticker
     pad = 14
 
     # Semi-transparent background
@@ -115,6 +115,88 @@ def _make_top_bar_frame(
         fill=(*cat_rgb, 220),
     )
     draw.text((bx, by), badge_text, fill=(15, 15, 15, 255), font=font_sm)
+
+    return np.array(img)
+
+
+def _make_lower_third_frame(
+    title: str,
+    source: str,
+    size: tuple = VIDEO_SIZE,
+) -> np.ndarray:
+    """
+    Professional news lower-third chyron anchored at the bottom.
+    Layout (bottom up, 8px from edge):
+      - Source name bar: dark navy, 26px tall
+      - Title bar: dark blue with orange accent stripe, 44px tall
+    Total: ~78px block.
+    """
+    w, h = size
+    img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    font_title  = _get_font(26)
+    font_source = _get_font(15)
+
+    # Truncate title to fit
+    max_chars = 68
+    display_title = title if len(title) <= max_chars else title[:max_chars - 1] + '…'
+
+    bar_w     = w - 32        # 16px margin on each side
+    bar_x     = 16
+    bot_edge  = h - 8         # 8px from bottom
+
+    # Source bar (dark navy, semi-transparent)
+    src_h = 26
+    src_y = bot_edge - src_h
+    draw.rectangle([bar_x, src_y, bar_x + bar_w, src_y + src_h], fill=(8, 18, 40, 210))
+    # Left accent tick
+    draw.rectangle([bar_x, src_y, bar_x + 4, src_y + src_h], fill=(245, 166, 35, 255))
+    draw.text((bar_x + 10, src_y + 5), f'SOURCE: {source.upper()}', fill=(160, 190, 220, 220), font=font_source)
+
+    # Title bar (dark blue, semi-transparent)
+    title_h = 44
+    title_y = src_y - title_h
+    draw.rectangle([bar_x, title_y, bar_x + bar_w, title_y + title_h], fill=(12, 28, 60, 235))
+    # Left orange accent stripe (6px)
+    draw.rectangle([bar_x, title_y, bar_x + 6, title_y + title_h], fill=(245, 166, 35, 255))
+    # Title text (white)
+    draw.text((bar_x + 14, title_y + 9), display_title, fill=(235, 242, 255, 255), font=font_title)
+
+    return np.array(img)
+
+
+def _make_news_ticker_frame(
+    text: str,
+    size: tuple = VIDEO_SIZE,
+) -> np.ndarray:
+    """
+    Static news ticker strip at the very bottom (28px height).
+    Shows a 'LIVE' badge and scrolling headline text (static v1).
+    """
+    w, h = size
+    img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    strip_h = 28
+    strip_y = h - strip_h
+
+    # Background strip
+    draw.rectangle([0, strip_y, w, h], fill=(6, 14, 35, 225))
+    # Orange top border
+    draw.line([(0, strip_y), (w, strip_y)], fill=(245, 166, 35, 255), width=2)
+
+    font_badge = _get_font(12)
+    font_text  = _get_font(14)
+
+    # LIVE badge (red)
+    badge_w = 46
+    draw.rectangle([0, strip_y, badge_w, h], fill=(195, 28, 28, 245))
+    draw.text((7, strip_y + 7), 'LIVE', fill=(255, 255, 255, 255), font=font_badge)
+
+    # Ticker text (truncated to fit single line)
+    max_text = text[:120] if len(text) > 120 else text
+    draw.text((badge_w + 10, strip_y + 6), max_text, fill=(210, 225, 245, 235), font=font_text)
 
     return np.array(img)
 
@@ -181,6 +263,7 @@ def create_video(
     source_name: str = 'KWT News',
     category_label: str = '🇰🇼 Kuwait',
     category_color: str = '#34d399',
+    title: str = '',
 ) -> None:
     """
     Assemble the final news video:
@@ -224,8 +307,20 @@ def create_video(
         sub_clip = _make_image_clip_from_rgba(sub_arr, duration=duration, start=chunk['start'])
         subtitle_clips.append(sub_clip)
 
+    # --- Lower-third chyron (shown for first 6 seconds) ---
+    lower_third_clips = []
+    ticker_clips = []
+    if title:
+        lt_duration = min(6.0, total_duration)
+        lt_arr = _make_lower_third_frame(title, source_name)
+        lt_clip = _make_image_clip_from_rgba(lt_arr, duration=lt_duration, start=0.5)
+        lower_third_clips.append(lt_clip)
+        # Static news ticker (full video duration)
+        ticker_arr = _make_news_ticker_frame(title)
+        ticker_clips.append(_make_image_clip_from_rgba(ticker_arr, duration=total_duration, start=0))
+
     # --- Composite ---
-    layers = [base, top_bar] + subtitle_clips
+    layers = [base, top_bar] + subtitle_clips + lower_third_clips + ticker_clips
     final = CompositeVideoClip(layers, size=VIDEO_SIZE)
     final = final.set_audio(audio)
     final = final.set_duration(total_duration)
@@ -258,6 +353,11 @@ def create_video(
     for sub in subtitle_clips:
         try:
             sub.close()
+        except Exception:
+            pass
+    for clip in lower_third_clips + ticker_clips:
+        try:
+            clip.close()
         except Exception:
             pass
 

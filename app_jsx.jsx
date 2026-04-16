@@ -985,10 +985,13 @@ const NewsManager = ({toast, initCat='all'}) => {
   const [editing,setEditing] = useState(null);
   const [formInit,setFormInit] = useState(BLANK);
   const [confirm,setConfirm] = useState(null);
-  const [search,setSearch] = useState('');
+  const [searchInput,setSearchInput] = useState(''); // raw input (debounced)
+  const [search,setSearch] = useState('');           // debounced value used in filter
   const [cat,setCat] = useState(initCat);
   const [statusFilter,setStatusFilter] = useState('published'); // 'published' | 'draft' | 'all'
   const [videoPlayId,setVideoPlayId] = useState(null); // which article video is playing
+  const [displayCount,setDisplayCount] = useState(40); // virtual cap for large lists
+  const searchDebounceRef = useRef(null);
 
   useEffect(()=>{
     // Try ordered query first; if Firestore index missing, fallback to unordered
@@ -1068,8 +1071,12 @@ const NewsManager = ({toast, initCat='all'}) => {
           <div style={{position:'absolute',left:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none'}}>
             <Ic n="search" s={15} c="var(--dim)"/>
           </div>
-          <input className="inp" placeholder="Search articles by title…" value={search}
-            onChange={e=>setSearch(e.target.value)} style={{paddingLeft:40}}/>
+          <input className="inp" placeholder="Search articles by title…" value={searchInput}
+            onChange={e=>{
+              setSearchInput(e.target.value);
+              clearTimeout(searchDebounceRef.current);
+              searchDebounceRef.current=setTimeout(()=>{ setSearch(e.target.value); setDisplayCount(40); },220);
+            }} style={{paddingLeft:40}}/>
         </div>
 
         {/* Status filter */}
@@ -1123,7 +1130,7 @@ const NewsManager = ({toast, initCat='all'}) => {
               <Ic n="plus" s={14}/> Add Article
             </button>
           </div>
-        ) : filtered.map(n=>(
+        ) : filtered.slice(0, displayCount).map(n=>(
           <React.Fragment key={n.id}>
           <div className="row"
             style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',gap:12,
@@ -1201,6 +1208,15 @@ const NewsManager = ({toast, initCat='all'}) => {
           )}
           </React.Fragment>
         ))}
+        {/* Load more button when list is capped */}
+        {filtered.length > displayCount && (
+          <div style={{padding:'16px',textAlign:'center',borderTop:'1px solid var(--border)'}}>
+            <button className="btn btn-ghost" style={{fontSize:13,padding:'9px 22px'}}
+              onClick={()=>setDisplayCount(c=>c+20)}>
+              Load 20 more ({filtered.length - displayCount} remaining)
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1860,9 +1876,13 @@ const AutomationPage = ({toast}) => {
   };
 
   // ── API health checks ────────────────────────────────────────
+  const API_CACHE_KEY = 'kwt_api_status_v1';
+  const API_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   const checkApis = async ()=>{
     setRefreshingApi(true);
-    const upd = s=>setApiStatus(p=>({...p,...s}));
+    const results = {};
+    const upd = s=>{ Object.assign(results,s); setApiStatus(p=>({...p,...s})); };
     // Firebase
     try{ await db.collection('news').limit(1).get(); upd({firebase:'ok'}); }
     catch(_){ upd({firebase:'error'}); }
@@ -1889,9 +1909,22 @@ const AutomationPage = ({toast}) => {
       }catch(_){ upd({pexels:'error'}); }
     }
     setRefreshingApi(false);
+    // Save results to cache
+    try{ localStorage.setItem(API_CACHE_KEY, JSON.stringify({ts:Date.now(), data:results})); }catch(_){}
   };
 
-  useEffect(()=>{ checkApis(); fetchGhRuns(); },[]);
+  useEffect(()=>{
+    // Load cached API status first (avoids slow network calls on every tab switch)
+    try{
+      const cached = JSON.parse(localStorage.getItem(API_CACHE_KEY)||'null');
+      if(cached && (Date.now()-cached.ts) < API_CACHE_TTL){
+        setApiStatus(cached.data);
+      } else {
+        checkApis();
+      }
+    } catch(_){ checkApis(); }
+    fetchGhRuns();
+  },[]);
 
   // ── Save token ───────────────────────────────────────────────
   const saveSetup = ()=>{
@@ -2364,11 +2397,10 @@ const LogosManager = ({toast}) => {
   const phoneInputRef = useRef(null);
 
   useEffect(()=>{
-    const u=db.collection('logos').orderBy('name').onSnapshot(s=>{
-      setLogos(s.docs.map(d=>({id:d.id,...d.data()})));
-      setLoading(false);
-    },()=>setLoading(false));
-    return ()=>u();
+    // Logos change rarely — one-time get() avoids a persistent WebSocket listener
+    db.collection('logos').orderBy('name').get()
+      .then(s=>{ setLogos(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); })
+      .catch(()=>setLoading(false));
   },[]);
 
   // ── Domain → Clearbit logo ──────────────────────────────────
@@ -3945,12 +3977,387 @@ Return ONLY valid JSON (no markdown, no code blocks):
   );
 };
 
+// ── MEDIA MANAGER (Social Media Hub) ─────────────────────────
+const MediaManager = ({toast}) => {
+  const PLATFORMS = [
+    {id:'instagram', label:'Instagram', color:'#E1306C', bg:'rgba(225,48,108,.1)', border:'rgba(225,48,108,.25)',
+     icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>,
+     tokenLabel:'Session Cookie (JSON)', tokenHelp:'Open Instagram in Chrome → DevTools → Application → Cookies → copy sessionid cookie value as JSON: {"sessionid":"..."}',
+     tokenField:'cookieData', hasPageId:false},
+    {id:'youtube', label:'YouTube', color:'#FF0000', bg:'rgba(255,0,0,.08)', border:'rgba(255,0,0,.22)',
+     icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 0 0-1.95 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.6C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02"/></svg>,
+     tokenLabel:'OAuth Refresh Token', tokenHelp:'Go to Google OAuth Playground → authorize YouTube Data API v3 → copy Refresh Token here',
+     tokenField:'accessToken', hasPageId:false},
+    {id:'facebook', label:'Facebook', color:'#1877F2', bg:'rgba(24,119,242,.08)', border:'rgba(24,119,242,.22)',
+     icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>,
+     tokenLabel:'Page Access Token', tokenHelp:'Go to Facebook Developers → Graph API Explorer → select your page → generate Page Access Token',
+     tokenField:'accessToken', hasPageId:true},
+    {id:'tiktok', label:'TikTok', color:'#69C9D0', bg:'rgba(105,201,208,.08)', border:'rgba(105,201,208,.22)',
+     icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg>,
+     tokenLabel:'Session Cookies (JSON)', tokenHelp:'Open TikTok in Chrome → DevTools → Application → Cookies → export as JSON using Cookie Editor extension',
+     tokenField:'cookieData', hasPageId:false},
+    {id:'x', label:'X (Twitter)', color:'#888', bg:'rgba(136,136,136,.08)', border:'rgba(136,136,136,.22)',
+     icon:<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>,
+     tokenLabel:'API Tokens (key|secret|access|access_secret)', tokenHelp:'Go to developer.twitter.com → your app → Keys and Tokens → paste as: API_KEY|API_SECRET|ACCESS_TOKEN|ACCESS_SECRET',
+     tokenField:'accessToken', hasPageId:false},
+  ];
+
+  const [activeTab, setActiveTab] = useState('accounts');
+  const [accounts, setAccounts]   = useState({});
+  const [queue, setQueue]         = useState([]);
+  const [loadingAcc, setLoadingAcc] = useState(true);
+  const [loadingQ,   setLoadingQ]   = useState(true);
+  const [editing,    setEditing]    = useState(null); // platform id
+  const [editForm,   setEditForm]   = useState({});
+  const [saving,     setSaving]     = useState(false);
+  const [videos,     setVideos]     = useState([]);
+  const [loadingVid, setLoadingVid] = useState(true);
+
+  // ── Firestore: social accounts ───────────────────────────────
+  useEffect(()=>{
+    const unsub = db.collection('social_accounts').onSnapshot(snap=>{
+      const map={};
+      snap.docs.forEach(d=>{ map[d.id]={id:d.id,...d.data()}; });
+      setAccounts(map);
+      setLoadingAcc(false);
+    }, ()=>setLoadingAcc(false));
+    return ()=>unsub();
+  },[]);
+
+  // ── Firestore: auto-posted videos ────────────────────────────
+  useEffect(()=>{
+    const unsub = db.collection('news')
+      .where('autoPosted','==',true)
+      .orderBy('timestamp','desc').limit(30)
+      .onSnapshot(snap=>{
+        setVideos(snap.docs.map(d=>({id:d.id,...d.data()})));
+        setLoadingVid(false);
+      }, ()=>setLoadingVid(false));
+    return ()=>unsub();
+  },[]);
+
+  // ── Firestore: social media queue ────────────────────────────
+  useEffect(()=>{
+    if(activeTab!=='queue') return;
+    const unsub = db.collection('social_media_queue')
+      .orderBy('createdAt','desc').limit(30)
+      .onSnapshot(snap=>{
+        setQueue(snap.docs.map(d=>({id:d.id,...d.data()})));
+        setLoadingQ(false);
+      }, ()=>setLoadingQ(false));
+    return ()=>unsub();
+  },[activeTab]);
+
+  const openEdit = (p) => {
+    const acc = accounts[p.id] || {};
+    setEditForm({
+      username: acc.username||'',
+      accessToken: acc.accessToken||'',
+      cookieData: typeof acc.cookieData==='object'&&acc.cookieData
+        ? JSON.stringify(acc.cookieData,null,2)
+        : (acc.cookieData||''),
+      pageId: acc.pageId||'',
+      notes: acc.notes||'',
+    });
+    setEditing(p.id);
+  };
+
+  const saveAccount = async (platformId, plat) => {
+    setSaving(true);
+    try {
+      const fd = editForm;
+      let cookieData = null;
+      if(plat.tokenField==='cookieData' && fd.cookieData.trim()){
+        try{ cookieData = JSON.parse(fd.cookieData); }
+        catch{ cookieData = fd.cookieData; } // store as string if not valid JSON
+      }
+      await db.collection('social_accounts').doc(platformId).set({
+        platform: platformId,
+        connected: true,
+        username: fd.username.trim(),
+        accessToken: plat.tokenField==='accessToken' ? fd.accessToken.trim() : (accounts[platformId]?.accessToken||''),
+        cookieData: cookieData,
+        pageId: fd.pageId.trim()||null,
+        notes: fd.notes.trim(),
+        connectedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      },{merge:true});
+      toast.add(`${plat.label} connected!`,'ok');
+      setEditing(null);
+    } catch(e){ toast.add('Save failed: '+e.message,'error'); }
+    setSaving(false);
+  };
+
+  const disconnectAccount = async (platformId, label) => {
+    try{
+      await db.collection('social_accounts').doc(platformId).set({
+        connected: false, accessToken:'', cookieData:null,
+        disconnectedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      },{merge:true});
+      toast.add(`${label} disconnected`,'ok');
+    }catch(e){ toast.add('Error: '+e.message,'error'); }
+  };
+
+  const fmtStatus = (results, plat) => {
+    if(!results) return null;
+    const r = results[plat];
+    if(!r) return null;
+    return r.success
+      ? <span style={{color:'var(--success)',fontWeight:700,fontSize:11}}>✓ Posted</span>
+      : <span style={{color:'var(--danger)',fontWeight:700,fontSize:11}}>✗ Failed</span>;
+  };
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <p style={{fontFamily:'Outfit',fontWeight:800,fontSize:20,marginBottom:4}}>Media Hub</p>
+        <p style={{color:'var(--muted)',fontSize:13}}>Connect social accounts &amp; track auto-uploads</p>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{display:'flex',gap:8,marginBottom:20,borderBottom:'1px solid var(--border)',paddingBottom:12}}>
+        {['accounts','queue','videos'].map(t=>(
+          <button key={t} onClick={()=>setActiveTab(t)}
+            style={{padding:'7px 16px',borderRadius:8,border:'none',cursor:'pointer',fontFamily:'Outfit',fontWeight:600,fontSize:13,
+              background:activeTab===t?'var(--accent)':'var(--surface2)',
+              color:activeTab===t?'#050c18':'var(--text)'}}>
+            {t==='accounts'?'🔗 Accounts':t==='queue'?'📤 Upload Queue':'🎬 Videos'}
+          </button>
+        ))}
+      </div>
+
+      {/* ── ACCOUNTS TAB ─────────────────────────────────────── */}
+      {activeTab==='accounts'&&(
+        <div>
+          <div style={{display:'grid',gap:14}}>
+            {PLATFORMS.map(p=>{
+              const acc = accounts[p.id]||{};
+              const connected = acc.connected && (acc.accessToken||acc.cookieData);
+              const isEditing = editing===p.id;
+              return (
+                <div key={p.id} className="card" style={{padding:0,overflow:'hidden',border:`1px solid ${connected?p.border:'var(--border)'}`,borderRadius:14}}>
+                  {/* Platform header */}
+                  <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',background:connected?p.bg:'transparent'}}>
+                    <div style={{width:42,height:42,borderRadius:12,background:connected?p.bg:'var(--surface2)',
+                      display:'flex',alignItems:'center',justifyContent:'center',color:connected?p.color:'var(--muted)',
+                      border:`1.5px solid ${connected?p.border:'var(--border)'}`}}>
+                      {p.icon}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <p style={{fontWeight:700,fontSize:15}}>{p.label}</p>
+                        <div style={{width:7,height:7,borderRadius:'50%',background:connected?'var(--success)':'var(--danger)',flexShrink:0}}></div>
+                        <span style={{fontSize:11,fontWeight:600,color:connected?'var(--success)':'var(--danger)'}}>
+                          {connected?'Connected':'Disconnected'}
+                        </span>
+                      </div>
+                      {connected&&acc.username&&(
+                        <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>@{acc.username}</p>
+                      )}
+                      {connected&&acc.lastPostedAt&&(
+                        <p style={{fontSize:11,color:'var(--dim)',marginTop:1}}>Last post: {timeAgo(acc.lastPostedAt)}</p>
+                      )}
+                    </div>
+                    <div style={{display:'flex',gap:8,flexShrink:0}}>
+                      {connected&&(
+                        <button className="btn btn-ghost" style={{fontSize:12,padding:'6px 12px',color:'var(--danger)'}}
+                          onClick={()=>disconnectAccount(p.id,p.label)}>Disconnect</button>
+                      )}
+                      <button className="btn btn-accent" style={{fontSize:12,padding:'6px 14px'}}
+                        onClick={()=>isEditing?setEditing(null):openEdit(p)}>
+                        {isEditing?'Cancel':connected?'Edit':'Connect'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Edit form */}
+                  {isEditing&&(
+                    <div style={{padding:'14px 16px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:12}}>
+                      <div>
+                        <p style={{fontSize:11,fontWeight:700,color:'var(--dim)',letterSpacing:'.05em',marginBottom:4}}>USERNAME / HANDLE</p>
+                        <input className="inp" style={{fontSize:13}} placeholder={`@${p.id}account`}
+                          value={editForm.username} onChange={e=>setEditForm(f=>({...f,username:e.target.value}))}/>
+                      </div>
+                      {p.hasPageId&&(
+                        <div>
+                          <p style={{fontSize:11,fontWeight:700,color:'var(--dim)',letterSpacing:'.05em',marginBottom:4}}>PAGE ID (Facebook)</p>
+                          <input className="inp" style={{fontSize:13}} placeholder="123456789..."
+                            value={editForm.pageId} onChange={e=>setEditForm(f=>({...f,pageId:e.target.value}))}/>
+                        </div>
+                      )}
+                      <div>
+                        <p style={{fontSize:11,fontWeight:700,color:'var(--dim)',letterSpacing:'.05em',marginBottom:4}}>{p.tokenLabel.toUpperCase()}</p>
+                        <textarea className="inp" rows={3} style={{fontSize:12,fontFamily:'monospace',resize:'vertical'}}
+                          placeholder={p.tokenField==='cookieData'?'{"sessionid":"abc123..."}':'paste token here...'}
+                          value={p.tokenField==='cookieData'?editForm.cookieData:editForm.accessToken}
+                          onChange={e=>setEditForm(f=>({...f,[p.tokenField==='cookieData'?'cookieData':'accessToken']:e.target.value}))}/>
+                        <p style={{fontSize:11,color:'var(--dim)',marginTop:4,lineHeight:1.4}}>{p.tokenHelp}</p>
+                      </div>
+                      <div>
+                        <p style={{fontSize:11,fontWeight:700,color:'var(--dim)',letterSpacing:'.05em',marginBottom:4}}>NOTES (optional)</p>
+                        <input className="inp" style={{fontSize:13}} placeholder="e.g. refresh every 30 days..."
+                          value={editForm.notes} onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))}/>
+                      </div>
+                      <div style={{display:'flex',gap:8}}>
+                        <button className="btn btn-accent" style={{flex:1,fontSize:13}} onClick={()=>saveAccount(p.id,p)} disabled={saving}>
+                          {saving?'Saving...':'💾 Save & Connect'}
+                        </button>
+                        <button className="btn btn-ghost" style={{fontSize:13}} onClick={()=>setEditing(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Status overview */}
+          <div className="card" style={{marginTop:16,padding:'12px 16px'}}>
+            <p style={{fontSize:12,fontWeight:700,color:'var(--dim)',letterSpacing:'.05em',marginBottom:10}}>CONNECTION STATUS</p>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+              {PLATFORMS.map(p=>{
+                const acc=accounts[p.id]||{};
+                const ok=acc.connected&&(acc.accessToken||acc.cookieData);
+                return(
+                  <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 12px',borderRadius:999,
+                    background:ok?'rgba(52,211,153,.08)':'rgba(248,113,113,.08)',
+                    border:`1px solid ${ok?'rgba(52,211,153,.25)':'rgba(248,113,113,.25)'}`}}>
+                    <div style={{width:6,height:6,borderRadius:'50%',background:ok?'var(--success)':'var(--danger)'}}></div>
+                    <span style={{fontSize:12,fontWeight:600,color:ok?'var(--success)':'var(--danger)'}}>{p.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── VIDEOS TAB ───────────────────────────────────────── */}
+      {activeTab==='videos'&&(
+        <div>
+          {loadingVid?(
+            <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Loading videos...</div>
+          ):videos.length===0?(
+            <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>
+              <Ic n="video" s={40} c="var(--border2)"/>
+              <p style={{marginTop:12,fontSize:14}}>No auto-published videos yet</p>
+              <p style={{fontSize:12,color:'var(--dim)',marginTop:4}}>Run automation to generate news videos</p>
+            </div>
+          ):(
+            <div style={{display:'grid',gap:14}}>
+              {videos.map(v=>{
+                const qEntry = queue.find(q=>q.newsId===v.id);
+                return (
+                  <div key={v.id} className="card" style={{padding:0,overflow:'hidden'}}>
+                    <div style={{display:'flex',gap:12,padding:14}}>
+                      {v.thumbnail&&(
+                        <img src={v.thumbnail} alt="" loading="lazy"
+                          style={{width:100,height:64,objectFit:'cover',borderRadius:8,flexShrink:0,background:'var(--surface2)'}}/>
+                      )}
+                      <div style={{flex:1,minWidth:0}}>
+                        <p style={{fontWeight:600,fontSize:13,lineHeight:1.4,marginBottom:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.title}</p>
+                        <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                          <span style={{fontSize:11,color:'var(--muted)'}}>{timeAgo(v.timestamp)}</span>
+                          <span style={{fontSize:11,color:'var(--muted)'}}>·</span>
+                          <span style={{fontSize:11,color:'var(--muted)'}}>{v.category}</span>
+                          {v.videoUrl&&(
+                            <a href={v.videoUrl} target="_blank" rel="noopener noreferrer"
+                              style={{fontSize:11,color:'var(--accent)',fontWeight:600}}>▶ View</a>
+                          )}
+                        </div>
+                        {/* Social status chips */}
+                        {qEntry?.results&&(
+                          <div style={{display:'flex',gap:5,marginTop:6,flexWrap:'wrap'}}>
+                            {PLATFORMS.map(p=>{
+                              const r=qEntry.results[p.id];
+                              if(!r) return null;
+                              return(
+                                <span key={p.id} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:999,
+                                  background:r.success?'rgba(52,211,153,.12)':'rgba(248,113,113,.12)',
+                                  color:r.success?'var(--success)':'var(--danger)',
+                                  border:`1px solid ${r.success?'rgba(52,211,153,.3)':'rgba(248,113,113,.3)'}`}}>
+                                  {r.success?'✓':'✗'} {p.label}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── QUEUE TAB ────────────────────────────────────────── */}
+      {activeTab==='queue'&&(
+        <div>
+          {loadingQ?(
+            <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Loading queue...</div>
+          ):queue.length===0?(
+            <div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>
+              <Ic n="send" s={40} c="var(--border2)"/>
+              <p style={{marginTop:12,fontSize:14}}>Upload queue is empty</p>
+              <p style={{fontSize:12,color:'var(--dim)',marginTop:4}}>Social uploads will appear here after automation runs</p>
+            </div>
+          ):(
+            <div style={{display:'grid',gap:12}}>
+              {queue.map(q=>{
+                const statusColor = q.status==='completed'?'var(--success)':q.status==='processing'?'var(--accent)':'var(--muted)';
+                const successCount = q.results?Object.values(q.results).filter(r=>r?.success).length:0;
+                const totalCount = q.platforms?.length||0;
+                return(
+                  <div key={q.id} className="card" style={{padding:'12px 14px'}}>
+                    <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:8}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <p style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{q.newsTitle||'Untitled'}</p>
+                        <p style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{fmtDate(q.createdAt)}</p>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+                        <div style={{width:7,height:7,borderRadius:'50%',background:statusColor}}></div>
+                        <span style={{fontSize:11,fontWeight:700,color:statusColor,textTransform:'capitalize'}}>{q.status}</span>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                      {(q.platforms||[]).map(pid=>{
+                        const plat = PLATFORMS.find(p=>p.id===pid);
+                        const r = q.results?.[pid];
+                        if(!plat) return null;
+                        return(
+                          <div key={pid} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 9px',borderRadius:999,
+                            background:r?.success?'rgba(52,211,153,.1)':r?'rgba(248,113,113,.1)':'var(--surface2)',
+                            border:`1px solid ${r?.success?'rgba(52,211,153,.3)':r?'rgba(248,113,113,.3)':'var(--border)'}`}}>
+                            <span style={{fontSize:10,fontWeight:700,color:r?.success?'var(--success)':r?'var(--danger)':'var(--muted)'}}>
+                              {r?.success?'✓':r?'✗':'⏳'} {plat.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {q.status==='completed'&&(
+                      <p style={{fontSize:11,color:'var(--dim)',marginTop:6}}>{successCount}/{totalCount} platforms posted successfully</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── PAGES CONFIG ──────────────────────────────────────────────
 const PAGES = [
   {id:'dashboard',label:'Home',icon:'grid'},
   {id:'news',label:'News',icon:'news'},
   {id:'ai',label:'AI',icon:'sparkle'},
   {id:'automation',label:'Auto',icon:'bot'},
+  {id:'media',label:'Media',icon:'video'},
   {id:'logos',label:'Logos',icon:'tag'},
   {id:'categories',label:'Categories',icon:'tag'},
   {id:'ads',label:'Ads',icon:'ads'},
@@ -3989,6 +4396,7 @@ const Layout = ({user,onLogout}) => {
       case 'notifications': return <PushNotifs {...p}/>;
       case 'automation': return <AutomationPage {...p}/>;
       case 'logos': return <LogosManager {...p}/>;
+      case 'media': return <MediaManager {...p}/>;
       case 'settings': return <SettingsPage user={user} {...p}/>;
       default: return <Dashboard/>;
     }
