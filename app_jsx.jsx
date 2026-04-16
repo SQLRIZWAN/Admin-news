@@ -15,7 +15,7 @@ const firebaseConfig = {
 const app = firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
-try{ db.settings({experimentalForceLongPolling:true,merge:true}); }catch(e){}
+try{ db.enablePersistence({synchronizeTabs:true}).catch(()=>{}); }catch(e){}
 
 const CLOUDINARY = { cloudName:'debp1kjtm', uploadPreset:'sql_admin', folder:'sql_users', uploadUrl:'https://api.cloudinary.com/v1_1/debp1kjtm/auto/upload' };
 const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','footer'];

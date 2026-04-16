@@ -168,10 +168,9 @@ const app = firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 try {
-  db.settings({
-    experimentalForceLongPolling: true,
-    merge: true
-  });
+  db.enablePersistence({
+    synchronizeTabs: true
+  }).catch(() => {});
 } catch (e) {}
 const CLOUDINARY = {
   cloudName: 'debp1kjtm',
