@@ -59,8 +59,24 @@ def _clean_for_tts(script: str) -> str:
     s = re.sub(r'\[[^\]]{1,40}\]', ' ', s)
     # Strip residual XML/SSML tags that may slip through
     s = re.sub(r'<[^>]{1,80}>', ' ', s)
+    # Strip unclosed SSML fragments like "<voice name=" with no closing '>'
+    s = re.sub(r'<[a-zA-Z/][^<>\n]{0,200}$', ' ', s)
+    s = re.sub(r'<[a-zA-Z/][^<>]{0,200}(?=<)', ' ', s)
+    # Strip residual JSON-key leftovers at line starts and mid-line
+    s = re.sub(r'(?im)^\s*(script|summary|title|content|model|voice|version|keywords?|source|image[_ ]?keyword|subtitle[_ ]?lines?)\s*[:=]\s*', ' ', s)
+    s = re.sub(r'\b(script|summary|title|content|model|voice|version)\s*:\s*', ' ', s, flags=re.IGNORECASE)
     # Strip stray code characters
     s = re.sub(r'[{}|\\]', ' ', s)
+
+    # De-duplicate immediate repeated sentences
+    parts = re.split(r'(?<=[।\.!?])\s+', s)
+    deduped, prev = [], None
+    for p in parts:
+        n = re.sub(r'\s+', ' ', p).strip().lower()
+        if n and n != prev:
+            deduped.append(p); prev = n
+    s = ' '.join(deduped)
+
     # Collapse whitespace
     s = ' '.join(s.split())
     return s.strip()
@@ -145,6 +161,7 @@ def generate_tts(script: str, output_path: str, voice: str = 'hi-IN-MadhurNeural
     script = _clean_for_tts(script)
     if not script:
         raise ValueError("Script is empty after cleaning — nothing to convert to speech")
+    print(f"   🔊 TTS input (first 300): {script[:300]!r}")
 
     # Try SSML first (most natural), then plain text fallbacks.
     # Hindi SSML uses prosody-only (no mstts:express-as newscast — not supported for hi-IN).

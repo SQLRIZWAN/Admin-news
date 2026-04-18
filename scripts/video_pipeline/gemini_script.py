@@ -14,6 +14,8 @@ import json
 import time
 import requests
 
+from tts import _clean_for_tts
+
 GEMINI_BASE = 'https://generativelanguage.googleapis.com/'
 MODELS = [
     {'m': 'gemini-2.5-flash',               'v': 'v1beta', 'search': True},
@@ -166,25 +168,28 @@ Return ONLY valid JSON (no markdown):
         raw = _call_gemini(translate_prompt, use_search=False)
         data = _parse_json(raw) if raw else None
         if data and data.get('script') and data.get('title'):
-            print(f"   ℹ️  RSS + Hindi translation via Gemini ({len(data['script'].split())} words)")
-            script_words = data['script'].split()
-            subtitle_lines = [
-                ' '.join(script_words[i:i+5])
-                for i in range(0, min(len(script_words), 30), 5)
-            ]
-            return {
-                'title':          data['title'],
-                'summary':        data.get('summary', summary[:300]),
-                'content':        data.get('summary', summary[:300]),
-                'script':         data['script'],
-                'keywords':       data.get('keywords', [keyword, 'news']),
-                'subtitle_lines': subtitle_lines,
-                'image_keyword':  data.get('image_keyword', keyword),
-                'source':         source,
-                'apply_link':     '',
-                'buy_link':       '',
-                'skip':           False,
-            }
+            cleaned_script = _clean_for_tts(data['script'])
+            if len(cleaned_script.split()) >= 20:
+                print(f"   ℹ️  RSS + Hindi translation via Gemini ({len(cleaned_script.split())} words)")
+                script_words = cleaned_script.split()
+                subtitle_lines = [
+                    ' '.join(script_words[i:i+5])
+                    for i in range(0, min(len(script_words), 30), 5)
+                ]
+                return {
+                    'title':          data['title'],
+                    'summary':        data.get('summary', summary[:300]),
+                    'content':        data.get('summary', summary[:300]),
+                    'script':         cleaned_script,
+                    'keywords':       data.get('keywords', [keyword, 'news']),
+                    'subtitle_lines': subtitle_lines,
+                    'image_keyword':  data.get('image_keyword', keyword),
+                    'source':         source,
+                    'apply_link':     '',
+                    'buy_link':       '',
+                    'skip':           False,
+                }
+            print(f"   ⚠️  Hindi translation too short after clean ({len(cleaned_script.split())} words) — falling back to English")
     except Exception as e:
         print(f"   Hindi translation failed: {e}")
 
@@ -213,7 +218,7 @@ Return ONLY valid JSON (no markdown):
         'title':          title,
         'summary':        summary[:300],
         'content':        content,
-        'script':         script,
+        'script':         _clean_for_tts(script),
         'keywords':       cfg.get('video_keywords', [keyword, 'news']),
         'subtitle_lines': subtitle_lines,
         'image_keyword':  keyword,
@@ -286,7 +291,7 @@ Return ONLY valid JSON (no markdown code blocks):
   "title": "Hindi headline",
   "summary": "2-3 sentence Hindi summary",
   "content": "Full article body (300-500 words)",
-  "script": "55-65 word Hindi spoken narration in Devanagari — ONLY speech text. NO model names, NO version numbers, NO URLs, NO code, NO parenthetical directions, NO JSON",
+  "script": "55-65 word PURE Hindi spoken text in Devanagari. HARD RULES: NO JSON, NO keys like 'script:' or 'summary:', NO English words except proper nouns, NO model/version names, NO URLs, NO parenthetical directions, NO duplicated sentences, NO markdown. Must read naturally when spoken aloud by a news anchor.",
   "keywords": ["visual scene 1", "visual scene 2", "visual scene 3"],
   "subtitle_lines": ["Hindi line one", "Hindi line two", "Hindi line three", "Hindi line four"],
   "image_keyword": "english thumbnail keyword",
@@ -316,6 +321,14 @@ Set "isBreaking": true ONLY for major breaking events: natural disasters, major 
             data.setdefault('buy_link',       '')
             data.setdefault('isBreaking',     False)
             data['skip'] = False
+
+            # Sanitize script so saved content (and TTS input) has no JSON/code/duplicates
+            data['script'] = _clean_for_tts(data.get('script', ''))
+            if len(data['script'].split()) < 20:
+                print(f"   ⚠️  Script too short after clean ({len(data['script'].split())} words) — falling back to RSS")
+                if news_item:
+                    return _rss_fallback_script(news_item, category, cfg)
+                return {'skip': True}
             return data
 
         if data and data.get('skip'):

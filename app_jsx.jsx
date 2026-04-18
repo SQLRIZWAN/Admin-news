@@ -15,7 +15,10 @@ const firebaseConfig = {
 const app = firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
-try{ db.enablePersistence({synchronizeTabs:true}).catch(()=>{}); }catch(e){}
+window.__newsCache = window.__newsCache || { list:[], dashRecent:[], catCounts:{}, stats:null, ts:0 };
+try{
+  db.enablePersistence({synchronizeTabs:true}).catch(err=>console.warn('[Firestore] persistence:',err?.code||err));
+}catch(e){ console.warn('[Firestore] persistence threw:',e); }
 
 const CLOUDINARY = { cloudName:'debp1kjtm', uploadPreset:'sql_admin', folder:'sql_users', uploadUrl:'https://api.cloudinary.com/v1_1/debp1kjtm/auto/upload' };
 const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','footer'];
@@ -469,30 +472,32 @@ const Login = ({onLogin}) => {
 
 // ── DASHBOARD ─────────────────────────────────────────────────
 const Dashboard = () => {
-  const [stats,setStats] = useState({news:0,users:0,comments:0,imp:0,clicks:0,breaking:0});
-  const [catCounts,setCatCounts] = useState({});
-  const [recent,setRecent] = useState([]);
-  const [loading,setLoading] = useState(true);
+  const C = window.__newsCache;
+  const [stats,setStats] = useState(C.stats||{news:0,users:0,comments:0,imp:0,clicks:0,breaking:0});
+  const [catCounts,setCatCounts] = useState(C.catCounts||{});
+  const [recent,setRecent] = useState(C.dashRecent||[]);
+  const [loading,setLoading] = useState(!(C.dashRecent&&C.dashRecent.length));
   const [statsLoaded,setStatsLoaded] = useState(false);
 
   useEffect(()=>{
-    const u=[];
-    // ── News: single listener for both count+category+recent ──────
-    // No orderBy on count query — avoids needing index and is faster
-    u.push(db.collection('news').limit(300).onSnapshot(s=>{
-      const cc={};let brk=0;
+    const u=[]; const t0=Date.now();
+    // Single ordered listener: computes counts + breaking + recent from one query
+    u.push(db.collection('news').orderBy('timestamp','desc').limit(100).onSnapshot(s=>{
+      const cc={}; let brk=0;
       s.docs.forEach(d=>{ const dt=d.data(); if(dt.category) cc[dt.category]=(cc[dt.category]||0)+1; if(dt.isBreaking) brk++; });
+      const rec = s.docs.slice(0,6).map(d=>({id:d.id,...d.data()}));
+      window.__newsCache.catCounts = cc;
+      window.__newsCache.dashRecent = rec;
+      window.__newsCache.stats = {...(window.__newsCache.stats||{}), news:s.size, breaking:brk};
+      window.__newsCache.ts = Date.now();
       setCatCounts(cc);
+      setRecent(rec);
       setStats(p=>({...p,news:s.size,breaking:brk}));
-    },()=>{}));
+      const elapsed = Date.now()-t0;
+      setTimeout(()=>setLoading(false), Math.max(0, 150-elapsed));
+    },()=>{ setTimeout(()=>setLoading(false), 150); }));
 
-    // Recent news (separate query for display only — limit 6, ordered)
-    u.push(db.collection('news').orderBy('timestamp','desc').limit(6).onSnapshot(s=>{
-      setRecent(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false);
-    },()=>{setLoading(false);}));
-
-    // ── Users, Comments, Ads: one-time get() instead of onSnapshot ─
-    // These don't need realtime. get() is faster and cheaper.
+    // Users, Comments, Ads: one-time get() — persistence makes repeat reads cache-served
     db.collection('users').limit(5000).get().then(s=>setStats(p=>({...p,users:s.size}))).catch(()=>{});
     db.collection('comments').limit(5000).get().then(s=>setStats(p=>({...p,comments:s.size}))).catch(()=>{});
     db.collection('ads').limit(100).get().then(s=>{
@@ -554,7 +559,7 @@ const Dashboard = () => {
           <Ic n="news" s={15} c="var(--accent)"/>
           <span style={{fontWeight:700,fontSize:14}}>Recent News</span>
         </div>
-        {loading?[1,2,3,4].map(i=>(
+        {loading?[1,2,3,4,5,6].map(i=>(
           <div key={i} style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',display:'flex',gap:12}}>
             <div className="shimmer" style={{width:44,height:44,borderRadius:10,flexShrink:0}}></div>
             <div style={{flex:1}}>
@@ -979,8 +984,9 @@ const NewsForm = ({editing, initialForm, onSave, onCancel, toast}) => {
 
 // ── NEWS MANAGER ───────────────────────────────────────────────
 const NewsManager = ({toast, initCat='all'}) => {
-  const [news,setNews] = useState([]);
-  const [loading,setLoading] = useState(true);
+  const C = window.__newsCache;
+  const [news,setNews] = useState(C.list||[]);
+  const [loading,setLoading] = useState(!(C.list&&C.list.length));
   const [view,setView] = useState('list'); // 'list' | 'form'
   const [editing,setEditing] = useState(null);
   const [formInit,setFormInit] = useState(BLANK);
@@ -994,13 +1000,23 @@ const NewsManager = ({toast, initCat='all'}) => {
   const searchDebounceRef = useRef(null);
 
   useEffect(()=>{
+    const t0 = Date.now();
+    const finishLoading = ()=>{ setTimeout(()=>setLoading(false), Math.max(0, 150-(Date.now()-t0))); };
     // Try ordered query first; if Firestore index missing, fallback to unordered
     let u = db.collection('news').orderBy('timestamp','desc').limit(100).onSnapshot(
-      s=>{ setNews(s.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); },
+      s=>{
+        const docs = s.docs.map(d=>({id:d.id,...d.data()}));
+        window.__newsCache.list = docs; window.__newsCache.ts = Date.now();
+        setNews(docs); finishLoading();
+      },
       _err=>{ // Fallback: unordered query (no index needed)
         u = db.collection('news').limit(100).onSnapshot(
-          s=>{ setNews(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.timestamp?.seconds||0)-(a.timestamp?.seconds||0))); setLoading(false); },
-          ()=>setLoading(false)
+          s=>{
+            const docs = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.timestamp?.seconds||0)-(a.timestamp?.seconds||0));
+            window.__newsCache.list = docs; window.__newsCache.ts = Date.now();
+            setNews(docs); finishLoading();
+          },
+          ()=>finishLoading()
         );
       }
     );
@@ -1109,7 +1125,7 @@ const NewsManager = ({toast, initCat='all'}) => {
 
       {/* Articles List */}
       <div className="card">
-        {loading ? [1,2,3,4].map(i=>(
+        {loading ? [1,2,3,4,5,6,7,8].map(i=>(
           <div key={i} style={{padding:'14px 16px',borderBottom:'1px solid var(--border)',display:'flex',gap:12,alignItems:'center'}}>
             <div className="shimmer" style={{width:56,height:56,borderRadius:12,flexShrink:0}}></div>
             <div style={{flex:1}}>
