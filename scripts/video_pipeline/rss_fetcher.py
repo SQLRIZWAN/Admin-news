@@ -5,11 +5,16 @@ Filters entries by category keywords so Kuwait-Jobs doesn't return BBC Business 
 """
 
 import re
+from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
+
 import feedparser
 import requests
 
 # Minimum summary length to consider a feed entry valid
-MIN_SUMMARY_LEN = 30
+MIN_SUMMARY_LEN = 60
+# Skip RSS entries older than this (keeps news fresh)
+MAX_AGE_HOURS = 48
 
 # Browser-like headers so feeds don't block the bot
 _HEADERS = {
@@ -111,6 +116,18 @@ def get_latest_news(rss_feeds: list, filter_keywords: list = None) -> dict | Non
                 item = _entry_to_item(entry, source_name)
                 if not item['title'] or len(item['summary']) < MIN_SUMMARY_LEN:
                     continue
+
+                # Skip stale entries older than MAX_AGE_HOURS
+                try:
+                    if item.get('published'):
+                        pub = parsedate_to_datetime(item['published'])
+                        if pub:
+                            if pub.tzinfo is None:
+                                pub = pub.replace(tzinfo=timezone.utc)
+                            if (datetime.now(timezone.utc) - pub) > timedelta(hours=MAX_AGE_HOURS):
+                                continue
+                except Exception:
+                    pass
 
                 if _matches_keywords(item, filter_keywords):
                     print(f"   ✅ RSS match: {source_name} — {item['title'][:60]}")
