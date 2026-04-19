@@ -31,6 +31,27 @@ window.__docTime = (n)=>{
   return isNaN(s)? 0: Math.floor(s/1000);
 };
 
+// Force a total Firestore resync: tear down the SDK, wipe the IndexedDB cache,
+// then hard-reload. Used when the local cache is stuck on a stale doc count
+// (e.g. rules were blocking reads earlier, so only 1 doc made it into cache).
+window.__forceResync = async ()=>{
+  try{
+    // Best-effort sign-out so we refetch with fresh auth too.
+    try{ await auth.signOut(); }catch(_){}
+    try{ await db.terminate(); }catch(_){}
+    try{ await db.clearPersistence(); }catch(_){}
+    // Also clear localStorage cache hints (except admin cloud creds).
+    try{
+      const keep = {};
+      ['cloudinary_api_key','cloudinary_api_secret','admin_token'].forEach(k=>{ const v=localStorage.getItem(k); if(v!=null) keep[k]=v; });
+      localStorage.clear();
+      Object.entries(keep).forEach(([k,v])=>localStorage.setItem(k,v));
+    }catch(_){}
+    try{ sessionStorage.clear(); }catch(_){}
+  }catch(e){ console.warn('[resync] error:',e); }
+  location.reload();
+};
+
 const CLOUDINARY = { cloudName:'debp1kjtm', uploadPreset:'sql_admin', folder:'sql_users', uploadUrl:'https://api.cloudinary.com/v1_1/debp1kjtm/auto/upload' };
 
 // ── Cloudinary asset delete ───────────────────────────────────
@@ -1143,9 +1164,16 @@ const NewsManager = ({toast, initCat='all'}) => {
             <span style={{fontSize:10,color:'var(--dim)',marginLeft:8}}>raw: {news.length} · proj: {firebase.app().options.projectId}</span>
           </p>
         </div>
-        <button className="btn btn-accent" style={{padding:'11px 20px',gap:8,fontSize:14}} onClick={openAdd}>
-          <Ic n="plus" s={16}/> Add Article
-        </button>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <button className="btn" style={{padding:'11px 14px',gap:6,fontSize:12,background:'rgba(96,165,250,.1)',border:'1px solid rgba(96,165,250,.35)',color:'#60a5fa',fontWeight:700}}
+            title="Wipe local Firestore cache and re-fetch from server. Use this if the dashboard shows fewer articles than the website."
+            onClick={()=>{ if(confirm('This will clear the local cache and reload the admin from the server. Continue?')) window.__forceResync(); }}>
+            🔄 Force Resync
+          </button>
+          <button className="btn btn-accent" style={{padding:'11px 20px',gap:8,fontSize:14}} onClick={openAdd}>
+            <Ic n="plus" s={16}/> Add Article
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -2432,16 +2460,34 @@ const AutomationPage = ({toast}) => {
           setTesting(false);
         };
 
+        // Parse server vs cache counts from results so we can auto-warn when they mismatch.
+        const server = dbStatus?.find(r=>r.name?.startsWith('🔢 Total on SERVER') && r.ok);
+        const cache  = dbStatus?.find(r=>r.name?.startsWith('💾 Total in LOCAL CACHE') && r.ok);
+        const cacheStale = server && cache && server.count > cache.count;
+
         return(
           <div style={{marginTop:14,padding:'14px',background:'var(--surface)',border:'1px solid var(--border2)',borderRadius:12}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
               <p style={{fontSize:12,fontWeight:700,color:'var(--text)',flex:1}}>🔬 Database Query Test</p>
+              <button onClick={()=>{ if(confirm('Clear local Firestore cache and reload?')) window.__forceResync(); }}
+                style={{padding:'6px 12px',borderRadius:8,border:'1.5px solid rgba(96,165,250,.35)',background:'rgba(96,165,250,.1)',color:'#60a5fa',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Outfit'}}>
+                🔄 Force Resync
+              </button>
               <button onClick={testDb} disabled={testing}
                 style={{padding:'6px 14px',borderRadius:8,border:'1.5px solid var(--border2)',background:'var(--surface2)',color:'var(--muted)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Outfit',display:'flex',alignItems:'center',gap:5}}>
                 {testing?<><span className="spinner" style={{width:10,height:10}}/> Testing…</>:'▶ Run Test'}
               </button>
             </div>
-            <p style={{fontSize:11,color:'var(--dim)',marginBottom:dbStatus?10:0}}>Tests the Firestore queries your news app uses. If any fail with "index required", tap the Fix link.</p>
+            <p style={{fontSize:11,color:'var(--dim)',marginBottom:dbStatus?10:0}}>Tests the Firestore queries your news app uses. If server count &gt; cache count, tap <strong>Force Resync</strong>.</p>
+            {cacheStale&&(
+              <div style={{marginBottom:10,padding:'10px 12px',borderRadius:8,background:'rgba(245,166,35,.12)',border:'1px solid rgba(245,166,35,.4)'}}>
+                <p style={{fontSize:11,fontWeight:800,color:'var(--accent)',marginBottom:4}}>⚠️ Local cache is stale — server has {server.count} docs, cache has {cache.count}.</p>
+                <p style={{fontSize:10.5,color:'var(--muted)',lineHeight:1.6,marginBottom:8}}>Your browser is showing old data from before the Firestore rules were fixed. Tap the button below to wipe the cache and re-fetch from the server.</p>
+                <button onClick={()=>window.__forceResync()} style={{padding:'8px 14px',borderRadius:8,border:'1.5px solid var(--accent)',background:'var(--accent)',color:'#000',cursor:'pointer',fontSize:11,fontWeight:800,fontFamily:'Outfit'}}>
+                  🔄 Clear Cache & Reload Now
+                </button>
+              </div>
+            )}
             {dbStatus&&(
               <div style={{display:'flex',flexDirection:'column',gap:6}}>
                 {dbStatus.map((r,i)=>(
