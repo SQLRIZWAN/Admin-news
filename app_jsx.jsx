@@ -2343,12 +2343,35 @@ const AutomationPage = ({toast}) => {
         const testDb = async ()=>{
           setTesting(true);
           const results = [];
+          // 1) TRUE total — no filter, no orderBy, no limit. Reveals the real count
+          //    in Firestore (uncovers docs that orderBy('timestamp') silently drops).
+          try{
+            const s = await db.collection('news').get({source:'server'});
+            let withTs=0, withoutTs=0, ai=0, auto=0, hidden=0, drafts=0;
+            const cats = {};
+            s.docs.forEach(d=>{
+              const x = d.data();
+              if(x.timestamp) withTs++; else withoutTs++;
+              if(x.aiGenerated) ai++;
+              if(x.autoPosted) auto++;
+              if(x.hidden===true) hidden++;
+              if(x.status==='draft' || (x.published===false && x.aiGenerated===true)) drafts++;
+              if(x.category) cats[x.category] = (cats[x.category]||0)+1;
+            });
+            results.push({name:`🔢 Total news in Firestore (server read)`, ok:true, count:s.size,
+              detail:`timestamp: ${withTs} · missing-timestamp: ${withoutTs} · aiGenerated: ${ai} · autoPosted: ${auto} · hidden: ${hidden} · drafts: ${drafts}`});
+            results.push({name:`📂 Per-category count`, ok:true, count:Object.keys(cats).length,
+              detail:Object.entries(cats).map(([k,v])=>`${k}:${v}`).join(' · ')||'(no category field on any doc)'});
+          }catch(e){
+            results.push({name:'🔢 Total news in Firestore', ok:false, count:0, err:e.message?.slice(0,200)});
+          }
+          // 2) Filter-specific probes (these DO use orderBy / where — they show whether
+          //    composite indexes exist and whether the filtered subset is non-empty).
           const tests = [
-            {name:'All news (no filter)',       fn:()=>db.collection('news').orderBy('timestamp','desc').limit(5).get()},
-            {name:'hidden==false + timestamp',  fn:()=>db.collection('news').where('hidden','==',false).orderBy('timestamp','desc').limit(5).get()},
-            {name:'published==true + timestamp',fn:()=>db.collection('news').where('published','==',true).orderBy('timestamp','desc').limit(5).get()},
-            {name:'isBreaking==true',           fn:()=>db.collection('news').where('isBreaking','==',true).limit(5).get()},
-            {name:'category+timestamp index',   fn:()=>db.collection('news').where('category','==','world').orderBy('timestamp','desc').limit(3).get()},
+            {name:'orderBy timestamp (silent drops if field missing)', fn:()=>db.collection('news').orderBy('timestamp','desc').limit(5).get()},
+            {name:'hidden==false + timestamp',                         fn:()=>db.collection('news').where('hidden','==',false).orderBy('timestamp','desc').limit(5).get()},
+            {name:'published==true + timestamp',                       fn:()=>db.collection('news').where('published','==',true).orderBy('timestamp','desc').limit(5).get()},
+            {name:'category==world + timestamp',                       fn:()=>db.collection('news').where('category','==','world').orderBy('timestamp','desc').limit(3).get()},
           ];
           for(const t of tests){
             try{
@@ -2382,6 +2405,9 @@ const AutomationPage = ({toast}) => {
                       <span style={{fontSize:11,fontWeight:700,flex:1,color:'var(--text)'}}>{r.name}</span>
                       {r.ok&&<span style={{fontSize:10,color:'#34d399',background:'rgba(52,211,153,.1)',padding:'2px 7px',borderRadius:99}}>{r.count} docs</span>}
                     </div>
+                    {r.ok&&r.detail&&(
+                      <p style={{fontSize:10,color:'var(--dim)',marginTop:4,lineHeight:1.5,wordBreak:'break-word'}}>{r.detail}</p>
+                    )}
                     {!r.ok&&(
                       <div style={{marginTop:5}}>
                         {r.err&&<p style={{fontSize:10,color:'#f87171',lineHeight:1.5}}>{r.err}</p>}
