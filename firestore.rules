@@ -1,81 +1,32 @@
 rules_version = '2';
 
-// Firestore security rules for the KWT News project.
+// ⚠️⚠️⚠️  WARNING — FULLY OPEN RULES  ⚠️⚠️⚠️
 //
-// ⚠️  DEPLOY THESE RULES:
-//   Option A — Firebase Console:
-//     1. Open https://console.firebase.google.com/project/kwt-news/firestore/rules
-//     2. Replace the existing rules with the contents of this file.
-//     3. Click "Publish".
+// These rules allow ANYONE on the internet to READ, WRITE, UPDATE and DELETE
+// every document in every collection of this Firestore database. No auth
+// required. This is intended ONLY for quick testing / bring-up while you
+// diagnose read/write issues.
 //
-//   Option B — Firebase CLI (if installed):
-//     firebase deploy --only firestore:rules
+// 🚨 Risks while these are live:
+//   • Any visitor can wipe your entire `news`, `comments`, `ads` etc.
+//   • Any visitor can post spam / malicious content.
+//   • Billing can spike from abuse (reads are metered).
 //
-// Admin SDK (used by the Python automation pipeline) BYPASSES these rules — so
-// pipeline writes always succeed regardless of what's here. These rules govern
-// the browser-based admin app and the public news website.
+// 🛡️  Tighten these as soon as things work:
+//   • `news`, `ads`, `logos`: keep `read:true`, change write to
+//     `request.auth != null` (admin-login required).
+//   • Everything else: change to `request.auth != null`.
+//   • See the earlier, safer version of this file in the repo history
+//     (commit 4b455da) for a good starting template.
+//
+// DEPLOY:
+//   https://console.firebase.google.com/project/kwt-news/firestore/rules
+//   → paste this entire file → Publish.
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // News articles — public read (website), authenticated write (admin).
-    match /news/{id} {
-      allow read: if true;
-      allow create, update, delete: if request.auth != null;
-    }
-
-    // Ads — public read, authenticated write.
-    match /ads/{id} {
-      allow read: if true;
-      allow create, update, delete: if request.auth != null;
-    }
-
-    // Source logos — public read, authenticated write.
-    match /logos/{id} {
-      allow read: if true;
-      allow create, update, delete: if request.auth != null;
-    }
-
-    // Comments — public read + public create (end users post comments),
-    // authenticated delete (admin moderation).
-    match /comments/{id} {
-      allow read, create: if true;
-      allow update, delete: if request.auth != null;
-    }
-
-    // Users — authenticated only (admin lists + blocks users).
-    match /users/{id} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Automation pipeline collections — authenticated admin read/write.
-    // The pipeline uses the Admin SDK which bypasses these rules.
-    match /automation_config/{id} { allow read, write: if request.auth != null; }
-    match /automation_logs/{id}   { allow read, write: if request.auth != null; }
-    match /pipeline_locks/{id}    { allow read, write: if request.auth != null; }
-
-    // Social media collections — authenticated admin only.
-    match /social_accounts/{id}     { allow read, write: if request.auth != null; }
-    match /social_media_queue/{id}  { allow read, write: if request.auth != null; }
-
-    // Push notifications — users can register their own token (create),
-    // only admin reads the full list or deletes.
-    match /fcm_tokens/{id} {
-      allow read, delete: if request.auth != null;
-      allow create, update: if true;
-    }
-    match /notification_history/{id} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Admin diagnostic probe (temporary write+delete from the admin panel).
-    match /_diagnostic/{id} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Fallback: deny everything else.
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }
