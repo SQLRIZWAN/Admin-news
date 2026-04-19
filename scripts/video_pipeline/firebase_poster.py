@@ -36,6 +36,10 @@ def _get_db():
         firebase_admin.initialize_app(cred)
 
     _db = firestore.client()
+    try:
+        print(f"🔥 Firestore initialised — project_id = {_db.project}")
+    except Exception:
+        pass
     return _db
 
 

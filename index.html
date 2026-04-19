@@ -145,7 +145,6 @@ body.modal-open{overflow:hidden;position:fixed;width:100%}
 
 var _excluded = ["impressions", "clicks"];
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
-function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t["return"] || t["return"](); } finally { if (u) throw o; } } }; }
 function _regeneratorValues(e) { if (null != e) { var t = e["function" == typeof Symbol && Symbol.iterator || "@@iterator"], r = 0; if (t) return t.call(e); if ("function" == typeof e.next) return e; if (!isNaN(e.length)) return { next: function next() { return e && r >= e.length && (e = void 0), { value: e && e[r++], done: !e }; } }; } throw new TypeError(_typeof(e) + " is not iterable"); }
 function _objectWithoutProperties(e, t) { if (null == e) return {}; var o, r, i = _objectWithoutPropertiesLoose(e, t); if (Object.getOwnPropertySymbols) { var n = Object.getOwnPropertySymbols(e); for (r = 0; r < n.length; r++) o = n[r], -1 === t.indexOf(o) && {}.propertyIsEnumerable.call(e, o) && (i[o] = e[o]); } return i; }
@@ -169,6 +168,7 @@ function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present,
 function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
 function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
 function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 var _React = React,
   useState = _React.useState,
   useEffect = _React.useEffect,
@@ -208,6 +208,17 @@ try {
 } catch (e) {
   console.warn('[Firestore] persistence threw:', e);
 }
+
+// Best-effort epoch (seconds) from whatever date-ish field a doc has. Used for
+// client-side newest-first sort so docs without `timestamp` still appear.
+window.__docTime = function (n) {
+  var t = n && (n.timestamp || n.createdAt || n.publishedAt || n.date || n.time || n.updatedAt);
+  if (!t) return 0;
+  if (_typeof(t) === 'object' && typeof t.seconds === 'number') return t.seconds;
+  if (typeof t === 'number') return t > 1e12 ? Math.floor(t / 1000) : t;
+  var s = new Date(t).getTime();
+  return isNaN(s) ? 0 : Math.floor(s / 1000);
+};
 var CLOUDINARY = {
   cloudName: 'debp1kjtm',
   uploadPreset: 'sql_admin',
@@ -1631,24 +1642,26 @@ var Dashboard = function Dashboard() {
   useEffect(function () {
     var u = [];
     var t0 = Date.now();
-    // Single ordered listener: computes counts + breaking + recent from one query
-    u.push(db.collection('news').orderBy('timestamp', 'desc').limit(100).onSnapshot(function (s) {
-      var cc = {};
-      var brk = 0;
-      s.docs.forEach(function (d) {
-        var dt = d.data();
-        if (dt.category) cc[dt.category] = (cc[dt.category] || 0) + 1;
-        if (dt.isBreaking) brk++;
-      });
-      var rec = s.docs.slice(0, 6).map(function (d) {
+    // Unordered fetch + client sort — includes docs missing the `timestamp` field.
+    u.push(db.collection('news').limit(500).onSnapshot(function (s) {
+      var docs = s.docs.map(function (d) {
         return _objectSpread({
           id: d.id
         }, d.data());
+      }).sort(function (a, b) {
+        return window.__docTime(b) - window.__docTime(a);
       });
+      var cc = {};
+      var brk = 0;
+      docs.forEach(function (dt) {
+        if (dt.category) cc[dt.category] = (cc[dt.category] || 0) + 1;
+        if (dt.isBreaking) brk++;
+      });
+      var rec = docs.slice(0, 6);
       window.__newsCache.catCounts = cc;
       window.__newsCache.dashRecent = rec;
       window.__newsCache.stats = _objectSpread(_objectSpread({}, window.__newsCache.stats || {}), {}, {
-        news: s.size,
+        news: docs.length,
         breaking: brk
       });
       window.__newsCache.ts = Date.now();
@@ -1656,7 +1669,7 @@ var Dashboard = function Dashboard() {
       setRecent(rec);
       setStats(function (p) {
         return _objectSpread(_objectSpread({}, p), {}, {
-          news: s.size,
+          news: docs.length,
           breaking: brk
         });
       });
@@ -3224,7 +3237,7 @@ var NewsManager = function NewsManager(_ref17) {
     _useState68 = _slicedToArray(_useState67, 2),
     videoPlayId = _useState68[0],
     setVideoPlayId = _useState68[1]; // which article video is playing
-  var _useState69 = useState(200),
+  var _useState69 = useState(500),
     _useState70 = _slicedToArray(_useState69, 2),
     displayCount = _useState70[0],
     setDisplayCount = _useState70[1]; // virtual cap for large lists
@@ -3236,35 +3249,23 @@ var NewsManager = function NewsManager(_ref17) {
         return setLoading(false);
       }, Math.max(0, 150 - (Date.now() - t0)));
     };
-    // Try ordered query first; if Firestore index missing, fallback to unordered
-    var u = db.collection('news').orderBy('timestamp', 'desc').limit(100).onSnapshot(function (s) {
+    // Unordered fetch + client sort — surfaces docs missing the `timestamp` field
+    // (orderBy silently omits them). Works without any composite index.
+    var u = db.collection('news').limit(500).onSnapshot(function (s) {
       var docs = s.docs.map(function (d) {
         return _objectSpread({
           id: d.id
         }, d.data());
+      }).sort(function (a, b) {
+        return window.__docTime(b) - window.__docTime(a);
       });
       window.__newsCache.list = docs;
       window.__newsCache.ts = Date.now();
       setNews(docs);
       finishLoading();
-    }, function (_err) {
-      // Fallback: unordered query (no index needed)
-      u = db.collection('news').limit(100).onSnapshot(function (s) {
-        var docs = s.docs.map(function (d) {
-          return _objectSpread({
-            id: d.id
-          }, d.data());
-        }).sort(function (a, b) {
-          var _b$timestamp, _a$timestamp;
-          return (((_b$timestamp = b.timestamp) === null || _b$timestamp === void 0 ? void 0 : _b$timestamp.seconds) || 0) - (((_a$timestamp = a.timestamp) === null || _a$timestamp === void 0 ? void 0 : _a$timestamp.seconds) || 0);
-        });
-        window.__newsCache.list = docs;
-        window.__newsCache.ts = Date.now();
-        setNews(docs);
-        finishLoading();
-      }, function () {
-        return finishLoading();
-      });
+    }, function (err) {
+      console.warn('[news] snapshot error:', (err === null || err === void 0 ? void 0 : err.code) || err);
+      finishLoading();
     });
     return function () {
       return u();
@@ -3424,7 +3425,13 @@ var NewsManager = function NewsManager(_ref17) {
     return !(n.hidden === true || n.status === 'draft' || n.published === false && n.aiGenerated === true);
   }).length, " published \xB7 ", news.filter(function (n) {
     return n.hidden === true || n.status === 'draft' || n.published === false && n.aiGenerated === true;
-  }).length, " drafts")), /*#__PURE__*/React.createElement("button", {
+  }).length, " drafts", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      color: 'var(--dim)',
+      marginLeft: 8
+    }
+  }, "raw: ", news.length, " \xB7 proj: ", firebase.app().options.projectId))), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-accent",
     style: {
       padding: '11px 20px',
