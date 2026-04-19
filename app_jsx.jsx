@@ -2343,10 +2343,13 @@ const AutomationPage = ({toast}) => {
         const testDb = async ()=>{
           setTesting(true);
           const results = [];
-          // 1) TRUE total — no filter, no orderBy, no limit. Reveals the real count
-          //    in Firestore (uncovers docs that orderBy('timestamp') silently drops).
+          // 1) TRUE total — no filter, no orderBy, no limit. First try SERVER (to
+          //    detect rules/network issues), then fall back to CACHE (so we still
+          //    get a count even if the server read is blocked).
+          let serverOk = false;
           try{
             const s = await db.collection('news').get({source:'server'});
+            serverOk = true;
             let withTs=0, withoutTs=0, ai=0, auto=0, hidden=0, drafts=0;
             const cats = {};
             s.docs.forEach(d=>{
@@ -2358,14 +2361,41 @@ const AutomationPage = ({toast}) => {
               if(x.status==='draft' || (x.published===false && x.aiGenerated===true)) drafts++;
               if(x.category) cats[x.category] = (cats[x.category]||0)+1;
             });
-            results.push({name:`🔢 Total news in Firestore (server read)`, ok:true, count:s.size,
+            results.push({name:`🔢 Total on SERVER (live Firestore)`, ok:true, count:s.size,
               detail:`timestamp: ${withTs} · missing-timestamp: ${withoutTs} · aiGenerated: ${ai} · autoPosted: ${auto} · hidden: ${hidden} · drafts: ${drafts}`});
-            results.push({name:`📂 Per-category count`, ok:true, count:Object.keys(cats).length,
+            results.push({name:`📂 Server per-category count`, ok:true, count:Object.keys(cats).length,
               detail:Object.entries(cats).map(([k,v])=>`${k}:${v}`).join(' · ')||'(no category field on any doc)'});
           }catch(e){
-            results.push({name:'🔢 Total news in Firestore', ok:false, count:0, err:e.message?.slice(0,200)});
+            results.push({
+              name:'🔢 Total on SERVER (BLOCKED)', ok:false, count:0,
+              err:`Server read failed. Reason: (a) Firestore security rules deny read for your account, or (b) no network. Fix rules: allow read:if request.auth != null;  — ${e.message?.slice(0,160)}`,
+              indexUrl:'https://console.firebase.google.com/project/kwt-news/firestore/rules'
+            });
           }
-          // 2) Filter-specific probes (these DO use orderBy / where — they show whether
+          // 2) Fallback: cache read (shows what the UI actually has locally).
+          try{
+            const s = await db.collection('news').get({source:'cache'});
+            results.push({name:`💾 Total in LOCAL CACHE`, ok:true, count:s.size,
+              detail: serverOk ? 'Same as server (good).' : 'Cache-only read — real count could be higher on server.'});
+          }catch(_){
+            results.push({name:'💾 Total in LOCAL CACHE', ok:true, count:0, detail:'Cache empty.'});
+          }
+          // 3) Write probe — confirms whether the admin client can write at all.
+          try{
+            const ref = await db.collection('_diagnostic').add({
+              ts: firebase.firestore.FieldValue.serverTimestamp(),
+              at: Date.now(),
+              note: 'admin write probe'
+            });
+            results.push({name:`✍️ Write probe (_diagnostic collection)`, ok:true, count:1, detail:`OK — doc id: ${ref.id}. Writes allowed.`});
+            // Clean up — don't leave probe docs behind.
+            try{ await ref.delete(); }catch(_){}
+          }catch(e){
+            results.push({name:'✍️ Write probe (BLOCKED)', ok:false, count:0,
+              err:`Writes denied. Security rules block this authenticated user. — ${e.message?.slice(0,160)}`,
+              indexUrl:'https://console.firebase.google.com/project/kwt-news/firestore/rules'});
+          }
+          // 4) Filter-specific probes (these DO use orderBy / where — they show whether
           //    composite indexes exist and whether the filtered subset is non-empty).
           const tests = [
             {name:'orderBy timestamp (silent drops if field missing)', fn:()=>db.collection('news').orderBy('timestamp','desc').limit(5).get()},
@@ -2381,6 +2411,22 @@ const AutomationPage = ({toast}) => {
               const indexUrl = e.message?.match(/https:\/\/console\.firebase[^\s]*/)?.[0]||null;
               results.push({name:t.name, ok:false, count:0, err:e.message?.slice(0,120), indexUrl});
             }
+          }
+          // 5) Automation log status breakdown — reveals whether the pipeline is
+          //    actually posting, or just skipping/erroring every run.
+          try{
+            const s = await db.collection('automation_logs').orderBy('timestamp','desc').limit(40).get();
+            const by = {posted:0, skipped:0, error:0, other:0};
+            const reasons = [];
+            s.docs.forEach(d=>{
+              const x = d.data();
+              if(by[x.status]!==undefined) by[x.status]++; else by.other++;
+              if(x.status!=='posted' && reasons.length<3 && x.reason) reasons.push(`[${x.status}] ${x.category||'?'}: ${(x.reason||'').slice(0,80)}`);
+            });
+            results.push({name:`📊 Last 40 automation runs`, ok:true, count:s.size,
+              detail:`posted: ${by.posted} · skipped: ${by.skipped} · error: ${by.error}${reasons.length? ' · Recent: '+reasons.join(' | '):''}`});
+          }catch(e){
+            results.push({name:'📊 Last 40 automation runs', ok:false, count:0, err:e.message?.slice(0,120)});
           }
           setDbStatus(results);
           setTesting(false);

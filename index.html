@@ -7278,13 +7278,15 @@ var AutomationPage = function AutomationPage(_ref41) {
       setTesting = _useState152[1];
     var testDb = /*#__PURE__*/function () {
       var _ref49 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee25() {
-        var results, s, withTs, withoutTs, ai, auto, hidden, drafts, cats, _e$message, tests, _i4, _tests, t, _s, _e$message2, _e$message3, indexUrl, _t18, _t19;
+        var results, serverOk, s, withTs, withoutTs, ai, auto, hidden, drafts, cats, _e$message, _s, ref, _e$message2, tests, _i4, _tests, t, _s2, _e$message3, _e$message4, indexUrl, _s3, by, reasons, _e$message5, _t18, _t19, _t20, _t21, _t22, _t23;
         return _regenerator().w(function (_context27) {
           while (1) switch (_context27.p = _context27.n) {
             case 0:
               setTesting(true);
-              results = []; // 1) TRUE total — no filter, no orderBy, no limit. Reveals the real count
-              //    in Firestore (uncovers docs that orderBy('timestamp') silently drops).
+              results = []; // 1) TRUE total — no filter, no orderBy, no limit. First try SERVER (to
+              //    detect rules/network issues), then fall back to CACHE (so we still
+              //    get a count even if the server read is blocked).
+              serverOk = false;
               _context27.p = 1;
               _context27.n = 2;
               return db.collection('news').get({
@@ -7292,6 +7294,7 @@ var AutomationPage = function AutomationPage(_ref41) {
               });
             case 2:
               s = _context27.v;
+              serverOk = true;
               withTs = 0, withoutTs = 0, ai = 0, auto = 0, hidden = 0, drafts = 0;
               cats = {};
               s.docs.forEach(function (d) {
@@ -7304,13 +7307,13 @@ var AutomationPage = function AutomationPage(_ref41) {
                 if (x.category) cats[x.category] = (cats[x.category] || 0) + 1;
               });
               results.push({
-                name: "\uD83D\uDD22 Total news in Firestore (server read)",
+                name: "\uD83D\uDD22 Total on SERVER (live Firestore)",
                 ok: true,
                 count: s.size,
                 detail: "timestamp: ".concat(withTs, " \xB7 missing-timestamp: ").concat(withoutTs, " \xB7 aiGenerated: ").concat(ai, " \xB7 autoPosted: ").concat(auto, " \xB7 hidden: ").concat(hidden, " \xB7 drafts: ").concat(drafts)
               });
               results.push({
-                name: "\uD83D\uDCC2 Per-category count",
+                name: "\uD83D\uDCC2 Server per-category count",
                 ok: true,
                 count: Object.keys(cats).length,
                 detail: Object.entries(cats).map(function (_ref50) {
@@ -7326,13 +7329,78 @@ var AutomationPage = function AutomationPage(_ref41) {
               _context27.p = 3;
               _t18 = _context27.v;
               results.push({
-                name: '🔢 Total news in Firestore',
+                name: '🔢 Total on SERVER (BLOCKED)',
                 ok: false,
                 count: 0,
-                err: (_e$message = _t18.message) === null || _e$message === void 0 ? void 0 : _e$message.slice(0, 200)
+                err: "Server read failed. Reason: (a) Firestore security rules deny read for your account, or (b) no network. Fix rules: allow read:if request.auth != null;  \u2014 ".concat((_e$message = _t18.message) === null || _e$message === void 0 ? void 0 : _e$message.slice(0, 160)),
+                indexUrl: 'https://console.firebase.google.com/project/kwt-news/firestore/rules'
               });
             case 4:
-              // 2) Filter-specific probes (these DO use orderBy / where — they show whether
+              _context27.p = 4;
+              _context27.n = 5;
+              return db.collection('news').get({
+                source: 'cache'
+              });
+            case 5:
+              _s = _context27.v;
+              results.push({
+                name: "\uD83D\uDCBE Total in LOCAL CACHE",
+                ok: true,
+                count: _s.size,
+                detail: serverOk ? 'Same as server (good).' : 'Cache-only read — real count could be higher on server.'
+              });
+              _context27.n = 7;
+              break;
+            case 6:
+              _context27.p = 6;
+              _t19 = _context27.v;
+              results.push({
+                name: '💾 Total in LOCAL CACHE',
+                ok: true,
+                count: 0,
+                detail: 'Cache empty.'
+              });
+            case 7:
+              _context27.p = 7;
+              _context27.n = 8;
+              return db.collection('_diagnostic').add({
+                ts: firebase.firestore.FieldValue.serverTimestamp(),
+                at: Date.now(),
+                note: 'admin write probe'
+              });
+            case 8:
+              ref = _context27.v;
+              results.push({
+                name: "\u270D\uFE0F Write probe (_diagnostic collection)",
+                ok: true,
+                count: 1,
+                detail: "OK \u2014 doc id: ".concat(ref.id, ". Writes allowed.")
+              });
+              // Clean up — don't leave probe docs behind.
+              _context27.p = 9;
+              _context27.n = 10;
+              return ref["delete"]();
+            case 10:
+              _context27.n = 12;
+              break;
+            case 11:
+              _context27.p = 11;
+              _t20 = _context27.v;
+            case 12:
+              _context27.n = 14;
+              break;
+            case 13:
+              _context27.p = 13;
+              _t21 = _context27.v;
+              results.push({
+                name: '✍️ Write probe (BLOCKED)',
+                ok: false,
+                count: 0,
+                err: "Writes denied. Security rules block this authenticated user. \u2014 ".concat((_e$message2 = _t21.message) === null || _e$message2 === void 0 ? void 0 : _e$message2.slice(0, 160)),
+                indexUrl: 'https://console.firebase.google.com/project/kwt-news/firestore/rules'
+              });
+            case 14:
+              // 4) Filter-specific probes (these DO use orderBy / where — they show whether
               //    composite indexes exist and whether the filtered subset is non-empty).
               tests = [{
                 name: 'orderBy timestamp (silent drops if field missing)',
@@ -7356,47 +7424,82 @@ var AutomationPage = function AutomationPage(_ref41) {
                 }
               }];
               _i4 = 0, _tests = tests;
-            case 5:
+            case 15:
               if (!(_i4 < _tests.length)) {
-                _context27.n = 10;
+                _context27.n = 20;
                 break;
               }
               t = _tests[_i4];
-              _context27.p = 6;
-              _context27.n = 7;
+              _context27.p = 16;
+              _context27.n = 17;
               return t.fn();
-            case 7:
-              _s = _context27.v;
+            case 17:
+              _s2 = _context27.v;
               results.push({
                 name: t.name,
                 ok: true,
-                count: _s.size,
+                count: _s2.size,
                 err: null
               });
-              _context27.n = 9;
+              _context27.n = 19;
               break;
-            case 8:
-              _context27.p = 8;
-              _t19 = _context27.v;
-              indexUrl = ((_e$message2 = _t19.message) === null || _e$message2 === void 0 || (_e$message2 = _e$message2.match(/https:\/\/console\.firebase[^\s]*/)) === null || _e$message2 === void 0 ? void 0 : _e$message2[0]) || null;
+            case 18:
+              _context27.p = 18;
+              _t22 = _context27.v;
+              indexUrl = ((_e$message3 = _t22.message) === null || _e$message3 === void 0 || (_e$message3 = _e$message3.match(/https:\/\/console\.firebase[^\s]*/)) === null || _e$message3 === void 0 ? void 0 : _e$message3[0]) || null;
               results.push({
                 name: t.name,
                 ok: false,
                 count: 0,
-                err: (_e$message3 = _t19.message) === null || _e$message3 === void 0 ? void 0 : _e$message3.slice(0, 120),
+                err: (_e$message4 = _t22.message) === null || _e$message4 === void 0 ? void 0 : _e$message4.slice(0, 120),
                 indexUrl: indexUrl
               });
-            case 9:
+            case 19:
               _i4++;
-              _context27.n = 5;
+              _context27.n = 15;
               break;
-            case 10:
+            case 20:
+              _context27.p = 20;
+              _context27.n = 21;
+              return db.collection('automation_logs').orderBy('timestamp', 'desc').limit(40).get();
+            case 21:
+              _s3 = _context27.v;
+              by = {
+                posted: 0,
+                skipped: 0,
+                error: 0,
+                other: 0
+              };
+              reasons = [];
+              _s3.docs.forEach(function (d) {
+                var x = d.data();
+                if (by[x.status] !== undefined) by[x.status]++;else by.other++;
+                if (x.status !== 'posted' && reasons.length < 3 && x.reason) reasons.push("[".concat(x.status, "] ").concat(x.category || '?', ": ").concat((x.reason || '').slice(0, 80)));
+              });
+              results.push({
+                name: "\uD83D\uDCCA Last 40 automation runs",
+                ok: true,
+                count: _s3.size,
+                detail: "posted: ".concat(by.posted, " \xB7 skipped: ").concat(by.skipped, " \xB7 error: ").concat(by.error).concat(reasons.length ? ' · Recent: ' + reasons.join(' | ') : '')
+              });
+              _context27.n = 23;
+              break;
+            case 22:
+              _context27.p = 22;
+              _t23 = _context27.v;
+              results.push({
+                name: '📊 Last 40 automation runs',
+                ok: false,
+                count: 0,
+                err: (_e$message5 = _t23.message) === null || _e$message5 === void 0 ? void 0 : _e$message5.slice(0, 120)
+              });
+            case 23:
               setDbStatus(results);
               setTesting(false);
-            case 11:
+            case 24:
               return _context27.a(2);
           }
-        }, _callee25, null, [[6, 8], [1, 3]]);
+        }, _callee25, null, [[20, 22], [16, 18], [9, 11], [7, 13], [4, 6], [1, 3]]);
       }));
       return function testDb() {
         return _ref49.apply(this, arguments);
@@ -7843,7 +7946,7 @@ var LogosManager = function LogosManager(_ref55) {
   // ── Pixabay gallery search ──────────────────────────────────
   var searchGallery = /*#__PURE__*/function () {
     var _ref56 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee26() {
-      var _d$hits, r, d, _t20;
+      var _d$hits, r, d, _t24;
       return _regenerator().w(function (_context28) {
         while (1) switch (_context28.p = _context28.n) {
           case 0:
@@ -7870,8 +7973,8 @@ var LogosManager = function LogosManager(_ref55) {
             break;
           case 5:
             _context28.p = 5;
-            _t20 = _context28.v;
-            toast.show('Search error: ' + _t20.message, 'error');
+            _t24 = _context28.v;
+            toast.show('Search error: ' + _t24.message, 'error');
           case 6:
             setSearching(false);
           case 7:
@@ -7897,7 +8000,7 @@ var LogosManager = function LogosManager(_ref55) {
   var handlePhoneFile = /*#__PURE__*/function () {
     var _ref57 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee27(e) {
       var _e$target$files;
-      var file, localUrl, fd, res, data, cloudUrl, _t21;
+      var file, localUrl, fd, res, data, cloudUrl, _t25;
       return _regenerator().w(function (_context29) {
         while (1) switch (_context29.p = _context29.n) {
           case 0:
@@ -7946,8 +8049,8 @@ var LogosManager = function LogosManager(_ref55) {
             break;
           case 6:
             _context29.p = 6;
-            _t21 = _context29.v;
-            toast.show('Upload failed: ' + _t21.message, 'error');
+            _t25 = _context29.v;
+            toast.show('Upload failed: ' + _t25.message, 'error');
           case 7:
             setPhoneUploading(false);
             // Reset file input so same file can be re-selected
@@ -7963,7 +8066,7 @@ var LogosManager = function LogosManager(_ref55) {
   }();
   var add = /*#__PURE__*/function () {
     var _ref58 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee28() {
-      var name, url, _t22;
+      var name, url, _t26;
       return _regenerator().w(function (_context30) {
         while (1) switch (_context30.p = _context30.n) {
           case 0:
@@ -8002,8 +8105,8 @@ var LogosManager = function LogosManager(_ref55) {
             break;
           case 5:
             _context30.p = 5;
-            _t22 = _context30.v;
-            toast.show('Error: ' + _t22.message, 'error');
+            _t26 = _context30.v;
+            toast.show('Error: ' + _t26.message, 'error');
           case 6:
             setSaving(false);
           case 7:
@@ -8017,7 +8120,7 @@ var LogosManager = function LogosManager(_ref55) {
   }();
   var del = /*#__PURE__*/function () {
     var _ref59 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee29(id, name) {
-      var _t23;
+      var _t27;
       return _regenerator().w(function (_context31) {
         while (1) switch (_context31.p = _context31.n) {
           case 0:
@@ -8036,8 +8139,8 @@ var LogosManager = function LogosManager(_ref55) {
             break;
           case 3:
             _context31.p = 3;
-            _t23 = _context31.v;
-            toast.show('Error: ' + _t23.message, 'error');
+            _t27 = _context31.v;
+            toast.show('Error: ' + _t27.message, 'error');
           case 4:
             return _context31.a(2);
         }
@@ -9092,8 +9195,8 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── CATEGORY BADGE (appears at 0.3s) ──────────────────
         if (sec > 0.3) {
-          var _t24 = easeOut((sec - 0.3) / 0.4);
-          ctx.globalAlpha = _t24;
+          var _t28 = easeOut((sec - 0.3) / 0.4);
+          ctx.globalAlpha = _t28;
           ctx.fillStyle = accent;
           ctx.beginPath();
           ctx.roundRect(22, 80, 200, 30, 6);
@@ -9115,7 +9218,7 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── HEADLINE (slides from left at 0.6s) ───────────────
         if (sec > 0.6) {
-          var _t25 = easeOut((sec - 0.6) / 0.6);
+          var _t29 = easeOut((sec - 0.6) / 0.6);
           ctx.save();
           ctx.beginPath();
           ctx.rect(0, 115, W * 0.54 + 30, H - 115 - 48);
@@ -9144,16 +9247,16 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── ACCENT LINE LEFT (animates at 1.2s) ───────────────
         if (sec > 1.2) {
-          var _t26 = easeOut((sec - 1.2) / 0.4);
-          var lineH = lerp(0, Math.min(titleLines.length * 64 + 10, H - 250), _t26);
+          var _t30 = easeOut((sec - 1.2) / 0.4);
+          var lineH = lerp(0, Math.min(titleLines.length * 64 + 10, H - 250), _t30);
           ctx.fillStyle = accent;
           ctx.fillRect(8, 165 - 40, 4, lineH);
         }
 
         // ─── SUMMARY (fades in at 4.5s) ────────────────────────
         if (sec > 4.2 && summary) {
-          var _t27 = easeOut((sec - 4.2) / 0.8);
-          ctx.globalAlpha = _t27;
+          var _t31 = easeOut((sec - 4.2) / 0.8);
+          ctx.globalAlpha = _t31;
           // Subtle separator
           ctx.fillStyle = 'rgba(255,255,255,0.12)';
           ctx.fillRect(22, titleLines.length * 64 + 165 - 20, W * 0.52 - 44, 1);
@@ -9168,8 +9271,8 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── LOWER-THIRD (slides up at 3s) ─────────────────────
         if (sec > 2.8) {
-          var _t28 = easeOut((sec - 2.8) / 0.5);
-          var ltY = lerp(H, H - 170, _t28);
+          var _t32 = easeOut((sec - 2.8) / 0.5);
+          var ltY = lerp(H, H - 170, _t32);
           ctx.fillStyle = 'rgba(5,12,24,0.94)';
           ctx.fillRect(0, ltY, W * 0.54, 90);
           ctx.fillStyle = accent;
@@ -9286,7 +9389,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
       logoImg,
       imgs,
       _args33 = arguments,
-      _t32;
+      _t36;
     return _regenerator().w(function (_context33) {
       while (1) switch (_context33.p = _context33.n) {
         case 0:
@@ -9298,7 +9401,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
           ttsText = script.slice(0, 500); // Try multiple TTS endpoints for reliability
           ttsUrls = ['https://text.pollinations.ai/' + encodeURIComponent(ttsText) + '?model=openai-audio&voice=alloy&seed=1', 'https://text.pollinations.ai/' + encodeURIComponent(ttsText) + '?model=openai-audio&voice=nova&seed=42'];
           _loop3 = /*#__PURE__*/_regenerator().m(function _loop3() {
-            var ttsUrl, resp, buf, testEl, canPlay, audioDur, capStream, _t29;
+            var ttsUrl, resp, buf, testEl, canPlay, audioDur, capStream, _t33;
             return _regenerator().w(function (_context32) {
               while (1) switch (_context32.p = _context32.n) {
                 case 0:
@@ -9380,7 +9483,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
                   break;
                 case 9:
                   _context32.p = 9;
-                  _t29 = _context32.v;
+                  _t33 = _context32.v;
                   if (audioBlobUrl) {
                     URL.revokeObjectURL(audioBlobUrl);
                     audioBlobUrl = null;
@@ -9419,7 +9522,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
           break;
         case 7:
           _context33.p = 7;
-          _t32 = _context33.v;
+          _t36 = _context33.v;
         case 8:
           // ── Preload all images (deduplicated) ─────────────────────────
           seenUrls = new Set();
@@ -9734,8 +9837,8 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
 
               // Summary text (documentary info panel)
               if (sec > 3.5 && summary) {
-                var _t30 = easeOut((sec - 3.5) / 0.9);
-                ctx.globalAlpha = _t30 * 0.9;
+                var _t34 = easeOut((sec - 3.5) / 0.9);
+                ctx.globalAlpha = _t34 * 0.9;
                 // Subtle separator line
                 var sepG = ctx.createLinearGradient(22, 0, W * 0.52 - 20, 0);
                 sepG.addColorStop(0, accent);
@@ -9803,8 +9906,8 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
 
               // Lower third — source + branding
               if (sec > 2.5) {
-                var _t31 = easeOut((sec - 2.5) / 0.6),
-                  ltY = lerp(H + 50, H - 175, _t31);
+                var _t35 = easeOut((sec - 2.5) / 0.6),
+                  ltY = lerp(H + 50, H - 175, _t35);
                 // Panel background with gradient
                 var ltGrad = ctx.createLinearGradient(0, ltY, W * 0.56, ltY);
                 ltGrad.addColorStop(0, 'rgba(3,8,18,0.97)');
@@ -9923,7 +10026,7 @@ var shortSourceName = function shortSourceName(name) {
 var _logoCache = new Map();
 var getOrCreateSourceLogo = /*#__PURE__*/function () {
   var _ref62 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee31(sourceName) {
-    var cacheKey, snap, lower, found, domain, url, ok, _short, q, genUrl, _short2, _t33, _t34, _t35;
+    var cacheKey, snap, lower, found, domain, url, ok, _short, q, genUrl, _short2, _t37, _t38, _t39;
     return _regenerator().w(function (_context34) {
       while (1) switch (_context34.p = _context34.n) {
         case 0:
@@ -9960,7 +10063,7 @@ var getOrCreateSourceLogo = /*#__PURE__*/function () {
           break;
         case 4:
           _context34.p = 4;
-          _t33 = _context34.v;
+          _t37 = _context34.v;
         case 5:
           // 2. Try Clearbit
           domain = guessSourceDomain(sourceName);
@@ -10000,7 +10103,7 @@ var getOrCreateSourceLogo = /*#__PURE__*/function () {
           break;
         case 9:
           _context34.p = 9;
-          _t34 = _context34.v;
+          _t38 = _context34.v;
         case 10:
           return _context34.a(2, url);
         case 11:
@@ -10021,7 +10124,7 @@ var getOrCreateSourceLogo = /*#__PURE__*/function () {
           break;
         case 14:
           _context34.p = 14;
-          _t35 = _context34.v;
+          _t39 = _context34.v;
         case 15:
           return _context34.a(2, genUrl);
       }
@@ -10156,7 +10259,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   }();
   var genVideo = /*#__PURE__*/function () {
     var _ref65 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee33(article) {
-      var prog, result, _t36;
+      var prog, result, _t40;
       return _regenerator().w(function (_context36) {
         while (1) switch (_context36.p = _context36.n) {
           case 0:
@@ -10194,10 +10297,10 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 4:
             _context36.p = 4;
-            _t36 = _context36.v;
+            _t40 = _context36.v;
             clearInterval(videoTimerRef.current);
             setVideoStatus('');
-            toast.add('Video error: ' + _t36.message, 'error');
+            toast.add('Video error: ' + _t40.message, 'error');
           case 5:
             setVideoBusy(false);
           case 6:
@@ -10235,7 +10338,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   };
   var saveDraftEdit = /*#__PURE__*/function () {
     var _ref66 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee34() {
-      var _t37;
+      var _t41;
       return _regenerator().w(function (_context37) {
         while (1) switch (_context37.p = _context37.n) {
           case 0:
@@ -10257,7 +10360,7 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 4:
             _context37.p = 4;
-            _t37 = _context37.v;
+            _t41 = _context37.v;
             toast.add('Update failed', 'error');
           case 5:
             setDraftSaving(false);
@@ -10281,7 +10384,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   }, [msgs]);
   var fetchDrafts = /*#__PURE__*/function () {
     var _ref67 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee35() {
-      var snap, docs, _t38;
+      var snap, docs, _t42;
       return _regenerator().w(function (_context38) {
         while (1) switch (_context38.p = _context38.n) {
           case 0:
@@ -10305,8 +10408,8 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 3:
             _context38.p = 3;
-            _t38 = _context38.v;
-            console.error(_t38);
+            _t42 = _context38.v;
+            console.error(_t42);
           case 4:
             setDraftsLoading(false);
           case 5:
@@ -10323,7 +10426,7 @@ var AINewsManager = function AINewsManager(_ref63) {
       var forceAI,
         u,
         _args39 = arguments,
-        _t39;
+        _t43;
       return _regenerator().w(function (_context39) {
         while (1) switch (_context39.p = _context39.n) {
           case 0:
@@ -10347,7 +10450,7 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 4:
             _context39.p = 4;
-            _t39 = _context39.v;
+            _t43 = _context39.v;
           case 5:
             return _context39.a(2, pollinationsUrl(query));
         }
@@ -10398,7 +10501,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   // ── Chat ─────────────────────────────────────────────
   var sendChat = /*#__PURE__*/function () {
     var _ref70 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee38() {
-      var userText, isArticleReq, prompt, responseText, parsed, replyText, article, _t40;
+      var userText, isArticleReq, prompt, responseText, parsed, replyText, article, _t44;
       return _regenerator().w(function (_context41) {
         while (1) switch (_context41.p = _context41.n) {
           case 0:
@@ -10438,11 +10541,11 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 4:
             _context41.p = 4;
-            _t40 = _context41.v;
+            _t44 = _context41.v;
             setMsgs(function (p) {
               return [].concat(_toConsumableArray(p), [{
                 role: 'ai',
-                text: 'Sorry, error: ' + _t40.message + '. Please try again.'
+                text: 'Sorry, error: ' + _t44.message + '. Please try again.'
               }]);
             });
           case 5:
@@ -10458,7 +10561,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   }();
   var saveChatDraft = /*#__PURE__*/function () {
     var _ref71 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee39(article) {
-      var sourceLogo, src, titleWords, _yield$Promise$all3, _yield$Promise$all4, img1, img2, img3, seenImgUrls, extraImages, fullArticle, docRef, prog, videoUrl, result, _t41, _t42, _t43, _t44;
+      var sourceLogo, src, titleWords, _yield$Promise$all3, _yield$Promise$all4, img1, img2, img3, seenImgUrls, extraImages, fullArticle, docRef, prog, videoUrl, result, _t45, _t46, _t47, _t48;
       return _regenerator().w(function (_context42) {
         while (1) switch (_context42.p = _context42.n) {
           case 0:
@@ -10486,7 +10589,7 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 5:
             _context42.p = 5;
-            _t41 = _context42.v;
+            _t45 = _context42.v;
           case 6:
             // 2. Fetch distinct background images for video transitions (deduplicated)
             setVideoStatus('image');
@@ -10549,8 +10652,8 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 10:
             _context42.p = 10;
-            _t42 = _context42.v;
-            throw new Error('Draft save failed: ' + _t42.message);
+            _t46 = _context42.v;
+            throw new Error('Draft save failed: ' + _t46.message);
           case 11:
             // 4. Render video with voice-over
             setVideoStatus('rendering');
@@ -10605,7 +10708,7 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 16:
             _context42.p = 16;
-            _t43 = _context42.v;
+            _t47 = _context42.v;
             clearInterval(videoTimerRef.current);
             // Video failed but text draft already saved — still show success
             setVideoStatus('');
@@ -10623,11 +10726,11 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 18:
             _context42.p = 18;
-            _t44 = _context42.v;
+            _t48 = _context42.v;
             clearInterval(videoTimerRef.current);
             setVideoStatus('');
             setVideoBusy(false);
-            toast.add('Failed: ' + _t44.message, 'error');
+            toast.add('Failed: ' + _t48.message, 'error');
           case 19:
             return _context42.a(2);
         }
@@ -10641,7 +10744,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   // ── Auto Generate ─────────────────────────────────────
   var generate = /*#__PURE__*/function () {
     var _ref72 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee40() {
-      var catInfo, topicPart, prompt, text, article, imageUrl, _t45;
+      var catInfo, topicPart, prompt, text, article, imageUrl, _t49;
       return _regenerator().w(function (_context43) {
         while (1) switch (_context43.p = _context43.n) {
           case 0:
@@ -10681,8 +10784,8 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 6:
             _context43.p = 6;
-            _t45 = _context43.v;
-            toast.add('Error: ' + _t45.message, 'error');
+            _t49 = _context43.v;
+            toast.add('Error: ' + _t49.message, 'error');
           case 7:
             setGenBusy(false);
           case 8:
@@ -10696,7 +10799,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   }();
   var savePreview = /*#__PURE__*/function () {
     var _ref73 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee41() {
-      var _t46;
+      var _t50;
       return _regenerator().w(function (_context44) {
         while (1) switch (_context44.p = _context44.n) {
           case 0:
@@ -10716,7 +10819,7 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 3:
             _context44.p = 3;
-            _t46 = _context44.v;
+            _t50 = _context44.v;
             toast.add('Save failed', 'error');
           case 4:
             return _context44.a(2);
@@ -10729,7 +10832,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   }();
   var regenImage = /*#__PURE__*/function () {
     var _ref74 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee42() {
-      var imageUrl, _t47;
+      var imageUrl, _t51;
       return _regenerator().w(function (_context45) {
         while (1) switch (_context45.p = _context45.n) {
           case 0:
@@ -10754,7 +10857,7 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 3:
             _context45.p = 3;
-            _t47 = _context45.v;
+            _t51 = _context45.v;
             toast.add('Image failed', 'error');
           case 4:
             return _context45.a(2);
@@ -10769,7 +10872,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   // ── Drafts ───────────────────────────────────────────
   var publishDraft = /*#__PURE__*/function () {
     var _ref75 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee43(id) {
-      var _t48;
+      var _t52;
       return _regenerator().w(function (_context46) {
         while (1) switch (_context46.p = _context46.n) {
           case 0:
@@ -10788,7 +10891,7 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 3:
             _context46.p = 3;
-            _t48 = _context46.v;
+            _t52 = _context46.v;
             toast.add('Publish failed', 'error');
           case 4:
             setActionId(null);
@@ -10803,7 +10906,7 @@ var AINewsManager = function AINewsManager(_ref63) {
   }();
   var delDraft = /*#__PURE__*/function () {
     var _ref76 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee44(id) {
-      var _t49;
+      var _t53;
       return _regenerator().w(function (_context47) {
         while (1) switch (_context47.p = _context47.n) {
           case 0:
@@ -10822,7 +10925,7 @@ var AINewsManager = function AINewsManager(_ref63) {
             break;
           case 3:
             _context47.p = 3;
-            _t49 = _context47.v;
+            _t53 = _context47.v;
             toast.add('Delete failed', 'error');
           case 4:
             setActionId(null);
@@ -11995,7 +12098,7 @@ var MediaManager = function MediaManager(_ref77) {
   };
   var saveAccount = /*#__PURE__*/function () {
     var _ref78 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee45(platformId, plat) {
-      var _accounts$platformId, fd, cookieData, _t50;
+      var _accounts$platformId, fd, cookieData, _t54;
       return _regenerator().w(function (_context48) {
         while (1) switch (_context48.p = _context48.n) {
           case 0:
@@ -12031,8 +12134,8 @@ var MediaManager = function MediaManager(_ref77) {
             break;
           case 3:
             _context48.p = 3;
-            _t50 = _context48.v;
-            toast.add('Save failed: ' + _t50.message, 'error');
+            _t54 = _context48.v;
+            toast.add('Save failed: ' + _t54.message, 'error');
           case 4:
             setSaving(false);
           case 5:
@@ -12046,7 +12149,7 @@ var MediaManager = function MediaManager(_ref77) {
   }();
   var disconnectAccount = /*#__PURE__*/function () {
     var _ref79 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee46(platformId, label) {
-      var _t51;
+      var _t55;
       return _regenerator().w(function (_context49) {
         while (1) switch (_context49.p = _context49.n) {
           case 0:
@@ -12066,8 +12169,8 @@ var MediaManager = function MediaManager(_ref77) {
             break;
           case 2:
             _context49.p = 2;
-            _t51 = _context49.v;
-            toast.add('Error: ' + _t51.message, 'error');
+            _t55 = _context49.v;
+            toast.add('Error: ' + _t55.message, 'error');
           case 3:
             return _context49.a(2);
         }
