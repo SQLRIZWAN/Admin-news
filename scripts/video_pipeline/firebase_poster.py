@@ -106,7 +106,7 @@ def get_all_recent_news(days: int = 3) -> list:
         return []
 
 
-def get_used_thumbnail_urls(days: int = 14) -> set:
+def get_used_thumbnail_urls(days: int = 30) -> set:
     """
     Return the set of Pixabay thumbnail URLs used in the last N days.
     Used by clip_fetcher to prevent identical thumbnails across articles.
@@ -243,18 +243,20 @@ def post_news(article: dict) -> str:
     ts = firestore.SERVER_TIMESTAMP
     doc = {
         # Article fields
-        'title':        article.get('title', ''),
-        'summary':      article.get('summary', ''),
-        'content':      article.get('content', ''),
-        'videoUrl':     article.get('videoUrl', ''),
-        'thumbnail':    article.get('thumbnail', ''),
-        'imageUrl':     article.get('imageUrl', ''),
-        'category':     article.get('category', ''),
-        'source':       article.get('source', 'KWT News'),
-        'sourceLogo':   article.get('sourceLogo', ''),
-        'readTime':     article.get('readTime', '1 min read'),
-        'mediaType':    article.get('mediaType', 'video'),
-        'isBreaking':   article.get('isBreaking', False),
+        'title':          article.get('title', ''),
+        'summary':        article.get('summary', ''),
+        'content':        article.get('content', ''),
+        'videoUrl':       article.get('videoUrl', ''),
+        'videoPublicId':  article.get('videoPublicId', ''),
+        'thumbnail':      article.get('thumbnail', ''),
+        'imageUrl':       article.get('imageUrl', ''),
+        'imagePublicId':  article.get('imagePublicId', ''),
+        'category':       article.get('category', ''),
+        'source':         article.get('source', 'KWT News'),
+        'sourceLogo':     article.get('sourceLogo', ''),
+        'readTime':       article.get('readTime', '1 min read'),
+        'mediaType':      article.get('mediaType', 'video'),
+        'isBreaking':     article.get('isBreaking', False),
         # Always published immediately, visible in app
         'hidden':       False,
         'published':    True,
