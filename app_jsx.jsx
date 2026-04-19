@@ -2764,7 +2764,15 @@ const CategoryManager = ({toast, onNavigate}) => {
   const [loading,setLoading] = useState(true);
 
   useEffect(()=>{
-    const u=db.collection('news').onSnapshot(s=>{
+    // Reuse Dashboard's cached per-category counts when available; only open a
+    // listener if cache is empty. Avoids downloading the entire collection here.
+    const cached = window.__newsCache && window.__newsCache.catCounts;
+    if(cached && Object.keys(cached).length){
+      const c={}; CATEGORIES.forEach(cat=>{ c[cat.value] = cached[cat.value]||0; });
+      setCounts(c); setLoading(false);
+      return ()=>{};
+    }
+    const u=db.collection('news').limit(500).onSnapshot(s=>{
       const c={};
       CATEGORIES.forEach(cat=>{ c[cat.value]=0; });
       s.docs.forEach(d=>{
@@ -3539,9 +3547,12 @@ const AINewsManager = ({toast, onBack}) => {
   const fetchDrafts = async()=>{
     setDraftsLoading(true);
     try{
-      const snap=await db.collection('news').orderBy('timestamp','desc').limit(100).get();
-      // Show ALL AI-generated articles (hidden drafts AND published auto-posts)
-      setDrafts(snap.docs.map(d=>({id:d.id,...d.data()})).filter(d=>d.aiGenerated));
+      // Unordered fetch + client sort so AI drafts without `timestamp` still appear.
+      const snap=await db.collection('news').limit(500).get();
+      const docs=snap.docs.map(d=>({id:d.id,...d.data()}))
+                         .filter(d=>d.aiGenerated)
+                         .sort((a,b)=> window.__docTime(b) - window.__docTime(a));
+      setDrafts(docs);
     }catch(e){ console.error(e); }
     setDraftsLoading(false);
   };
