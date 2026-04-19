@@ -21,6 +21,55 @@ try{
 }catch(e){ console.warn('[Firestore] persistence threw:',e); }
 
 const CLOUDINARY = { cloudName:'debp1kjtm', uploadPreset:'sql_admin', folder:'sql_users', uploadUrl:'https://api.cloudinary.com/v1_1/debp1kjtm/auto/upload' };
+
+// ── Cloudinary asset delete ───────────────────────────────────
+// Extract public_id + resource type from a Cloudinary secure URL, or use stored fields.
+// Signed destroy requires api_key+api_secret stored in localStorage (admin-only; enter once via Settings).
+const cloudinaryPublicIdFromUrl = (url) => {
+  if(!url || typeof url!=='string' || !url.includes('res.cloudinary.com')) return null;
+  try{
+    const m = url.match(/res\.cloudinary\.com\/[^/]+\/(image|video|raw)\/upload\/(?:[^/]+\/)*(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/);
+    if(!m) return null;
+    return { resourceType: m[1], publicId: m[2] };
+  }catch{ return null; }
+};
+const _sha1Hex = async (msg) => {
+  const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(msg));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+};
+const cloudinaryDestroy = async (publicId, resourceType='image') => {
+  const apiKey    = localStorage.getItem('cld_api_key')    || '';
+  const apiSecret = localStorage.getItem('cld_api_secret') || '';
+  if(!publicId || !apiKey || !apiSecret) return false;
+  const ts = Math.floor(Date.now()/1000);
+  const signature = await _sha1Hex(`public_id=${publicId}&timestamp=${ts}${apiSecret}`);
+  const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/${resourceType}/destroy`;
+  const body = new FormData();
+  body.append('public_id', publicId);
+  body.append('api_key', apiKey);
+  body.append('timestamp', String(ts));
+  body.append('signature', signature);
+  try{
+    const res = await fetch(url, {method:'POST', body});
+    const data = await res.json();
+    return data.result==='ok' || data.result==='not found';
+  }catch(e){ console.warn('Cloudinary destroy error:', e); return false; }
+};
+// Delete video + thumbnail from Cloudinary if credentials available.
+const deleteCloudinaryAssetsFor = async (article) => {
+  const jobs = [];
+  if(article.videoPublicId)  jobs.push(cloudinaryDestroy(article.videoPublicId, 'video'));
+  else if(article.videoUrl){ const p=cloudinaryPublicIdFromUrl(article.videoUrl);    if(p) jobs.push(cloudinaryDestroy(p.publicId, p.resourceType)); }
+  if(article.imagePublicId) jobs.push(cloudinaryDestroy(article.imagePublicId, 'image'));
+  else {
+    for(const f of ['thumbnail','imageUrl']){
+      const p = cloudinaryPublicIdFromUrl(article[f]);
+      if(p) jobs.push(cloudinaryDestroy(p.publicId, p.resourceType));
+    }
+  }
+  if(!jobs.length) return;
+  try{ await Promise.all(jobs); }catch{}
+};
 const AD_POSITIONS = ['top_banner','in_feed','sidebar_top','sidebar_bottom','footer'];
 
 // ── AI Config (Puter.js — no API key needed) ──────────────────
@@ -994,9 +1043,9 @@ const NewsManager = ({toast, initCat='all'}) => {
   const [searchInput,setSearchInput] = useState(''); // raw input (debounced)
   const [search,setSearch] = useState('');           // debounced value used in filter
   const [cat,setCat] = useState(initCat);
-  const [statusFilter,setStatusFilter] = useState('published'); // 'published' | 'draft' | 'all'
+  const [statusFilter,setStatusFilter] = useState('all'); // 'published' | 'draft' | 'all'
   const [videoPlayId,setVideoPlayId] = useState(null); // which article video is playing
-  const [displayCount,setDisplayCount] = useState(40); // virtual cap for large lists
+  const [displayCount,setDisplayCount] = useState(200); // virtual cap for large lists
   const searchDebounceRef = useRef(null);
 
   useEffect(()=>{
@@ -1028,7 +1077,18 @@ const NewsManager = ({toast, initCat='all'}) => {
   const closeForm=()=>{ setView('list'); setEditing(null); setFormInit(BLANK); };
 
   const del=async id=>{
-    try{ await db.collection('news').doc(id).delete(); toast.add('Article deleted'); }
+    try{
+      const article = news.find(n=>n.id===id) || {};
+      // Delete Cloudinary assets first (best-effort, non-blocking if creds missing)
+      deleteCloudinaryAssetsFor(article).catch(()=>{});
+      await db.collection('news').doc(id).delete();
+      // Remove from local cache so the UI doesn't flash the deleted item back
+      if(window.__newsCache){
+        window.__newsCache.list = (window.__newsCache.list||[]).filter(n=>n.id!==id);
+        window.__newsCache.dashRecent = (window.__newsCache.dashRecent||[]).filter(n=>n.id!==id);
+      }
+      toast.add('Article deleted (DB + Cloudinary)');
+    }
     catch(e){ toast.add(e.message,'error'); }
     setConfirm(null);
   };
@@ -1850,6 +1910,8 @@ const AutomationPage = ({toast}) => {
 
   const [ghToken,       setGhToken]       = useState(localStorage.getItem(LS_TOKEN)||'');
   const [pexelsKey,     setPexelsKey]     = useState(localStorage.getItem(LS_PEXELS)||'');
+  const [cldApiKey,     setCldApiKey]     = useState(localStorage.getItem('cld_api_key')||'');
+  const [cldApiSecret,  setCldApiSecret]  = useState(localStorage.getItem('cld_api_secret')||'');
   const [showSetup,     setShowSetup]     = useState(!localStorage.getItem(LS_TOKEN));
   const [configs,       setConfigs]       = useState({});
   const [logs,          setLogs]          = useState([]);
@@ -1946,7 +2008,9 @@ const AutomationPage = ({toast}) => {
   const saveSetup = ()=>{
     if(!ghToken.trim()){ toast.show('Enter GitHub token','error'); return; }
     localStorage.setItem(LS_TOKEN, ghToken.trim());
-    if(pexelsKey.trim()) localStorage.setItem(LS_PEXELS, pexelsKey.trim());
+    if(pexelsKey.trim())    localStorage.setItem(LS_PEXELS, pexelsKey.trim());
+    if(cldApiKey.trim())    localStorage.setItem('cld_api_key', cldApiKey.trim());
+    if(cldApiSecret.trim()) localStorage.setItem('cld_api_secret', cldApiSecret.trim());
     setShowSetup(false);
     toast.show('✅ Saved!','success');
     fetchGhRuns(); checkApis();
@@ -2090,7 +2154,11 @@ const AutomationPage = ({toast}) => {
               placeholder="ghp_xxxxxxxxxxxxxxxx  (GitHub token)" style={{fontFamily:'DM Mono,monospace',fontSize:12}}/>
             <input className="inp" value={pexelsKey} onChange={e=>setPexelsKey(e.target.value)}
               placeholder="Pexels API key (optional, for status check)" style={{fontSize:12}}/>
-            <button className="btn btn-accent" style={{padding:'11px',fontWeight:700}} onClick={saveSetup}>💾 Save Token</button>
+            <input className="inp" value={cldApiKey} onChange={e=>setCldApiKey(e.target.value)}
+              placeholder="Cloudinary API Key (for full delete from Cloudinary)" style={{fontSize:12}}/>
+            <input className="inp" type="password" value={cldApiSecret} onChange={e=>setCldApiSecret(e.target.value)}
+              placeholder="Cloudinary API Secret" style={{fontSize:12}}/>
+            <button className="btn btn-accent" style={{padding:'11px',fontWeight:700}} onClick={saveSetup}>💾 Save Credentials</button>
           </div>
         </div>
       )}

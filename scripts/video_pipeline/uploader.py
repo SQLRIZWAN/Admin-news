@@ -15,8 +15,10 @@ VIDEO_UPLOAD_URL = f'https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD}/video/up
 IMAGE_UPLOAD_URL = f'https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD}/image/upload'
 
 
-def _upload_with_retry(url: str, data: dict, files: dict, retries: int = 3) -> str | None:
-    """Upload to Cloudinary with exponential backoff retry."""
+def _upload_with_retry(url: str, data: dict, files: dict, retries: int = 3) -> dict | None:
+    """Upload to Cloudinary with exponential backoff retry.
+    Returns {'url': secure_url, 'public_id': public_id} on success, None on failure.
+    """
     delay = 5
     for attempt in range(retries):
         try:
@@ -24,7 +26,7 @@ def _upload_with_retry(url: str, data: dict, files: dict, retries: int = 3) -> s
             result = res.json()
 
             if res.status_code == 200 and result.get('secure_url'):
-                return result['secure_url']
+                return {'url': result['secure_url'], 'public_id': result.get('public_id', '')}
 
             error = result.get('error', {}).get('message', 'Unknown error')
             print(f"   Cloudinary attempt {attempt+1} failed: {error}")
@@ -41,15 +43,15 @@ def _upload_with_retry(url: str, data: dict, files: dict, retries: int = 3) -> s
     return None
 
 
-def upload_video(video_path: str) -> str | None:
+def upload_video(video_path: str) -> dict | None:
     """
     Upload a video file to Cloudinary.
-    Returns the secure URL or None on failure.
+    Returns {'url': ..., 'public_id': ...} or None on failure.
     """
     print(f"   Uploading video ({os.path.getsize(video_path)/1024/1024:.1f} MB)...")
 
     with open(video_path, 'rb') as f:
-        url = _upload_with_retry(
+        result = _upload_with_retry(
             VIDEO_UPLOAD_URL,
             data={
                 'upload_preset': UPLOAD_PRESET,
@@ -59,18 +61,18 @@ def upload_video(video_path: str) -> str | None:
             files={'file': f},
         )
 
-    if url:
-        print(f"   ✅ Video uploaded: {url[:70]}...")
+    if result:
+        print(f"   ✅ Video uploaded: {result['url'][:70]}... (id: {result['public_id']})")
     else:
         print("   ❌ Video upload failed after retries")
 
-    return url
+    return result
 
 
-def upload_image_from_url(image_url: str) -> str:
+def upload_image_from_url(image_url: str) -> dict:
     """
     Upload a remote image URL to Cloudinary (for thumbnail control).
-    Returns the Cloudinary URL or the original URL as fallback.
+    Returns {'url': ..., 'public_id': ...} with public_id='' if we had to fall back to the original URL.
     """
     try:
         res = requests.post(
@@ -84,9 +86,9 @@ def upload_image_from_url(image_url: str) -> str:
         )
         result = res.json()
         if res.status_code == 200 and result.get('secure_url'):
-            return result['secure_url']
+            return {'url': result['secure_url'], 'public_id': result.get('public_id', '')}
     except Exception as e:
         print(f"   Thumbnail upload skipped: {e}")
 
-    # Return original Pixabay URL as fallback
-    return image_url
+    # Return original Pixabay URL as fallback (no public_id — can't destroy externally)
+    return {'url': image_url, 'public_id': ''}

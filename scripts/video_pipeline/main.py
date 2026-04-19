@@ -171,9 +171,11 @@ def run(category: str, breaking_only: bool = False) -> bool:
         # ── 7. Thumbnail from Pixabay ────────────────────────────────────────
         print("\n🖼️   Step 6 — Getting thumbnail...")
         thumb_keyword = script_data.get('image_keyword') or cfg['search_keyword']
-        used_thumb_urls = get_used_thumbnail_urls(days=14)
+        used_thumb_urls = get_used_thumbnail_urls(days=30)
         pixabay_url = get_pixabay_image(thumb_keyword, used_urls=used_thumb_urls)
-        thumbnail_url = upload_image_from_url(pixabay_url)
+        thumb_upload = upload_image_from_url(pixabay_url)
+        thumbnail_url = thumb_upload['url']
+        thumbnail_public_id = thumb_upload.get('public_id', '')
         print(f"      Thumbnail: {thumbnail_url[:70]}")
 
         # ── 8. Assemble video ────────────────────────────────────────────────
@@ -195,9 +197,11 @@ def run(category: str, breaking_only: bool = False) -> bool:
 
         # ── 9. Upload to Cloudinary ──────────────────────────────────────────
         print("\n☁️   Step 8 — Uploading to Cloudinary...")
-        video_url = upload_video(video_path)
-        if not video_url:
+        video_upload = upload_video(video_path)
+        if not video_upload:
             raise RuntimeError("Cloudinary video upload failed after all retries")
+        video_url = video_upload['url']
+        video_public_id = video_upload.get('public_id', '')
 
         # ── 10. Source logo ──────────────────────────────────────────────────
         print("\n🏷️   Step 9 — Looking up source logo (Firestore logos)...")
@@ -216,20 +220,22 @@ def run(category: str, breaking_only: bool = False) -> bool:
             content += f"\n\n🛒 **Buy / View Offer:** {script_data['buy_link']}"
 
         article = {
-            'title':      script_data['title'],
-            'summary':    script_data.get('summary', ''),
-            'content':    content,
-            'videoUrl':   video_url,
-            'thumbnail':  thumbnail_url,
-            'imageUrl':   thumbnail_url,
-            'category':   category,
-            'source':     source_name,
-            'sourceLogo': source_logo or '',
-            'readTime':   f"{max(1, len(script_data['script'].split()) // 130)} min read",
-            'isBreaking': is_breaking,
+            'title':          script_data['title'],
+            'summary':        script_data.get('summary', ''),
+            'content':        content,
+            'videoUrl':       video_url,
+            'videoPublicId':  video_public_id,
+            'thumbnail':      thumbnail_url,
+            'imageUrl':       thumbnail_url,
+            'imagePublicId':  thumbnail_public_id,
+            'category':       category,
+            'source':         source_name,
+            'sourceLogo':     source_logo or '',
+            'readTime':       f"{max(1, len(script_data['script'].split()) // 130)} min read",
+            'isBreaking':     is_breaking,
             # Use 'article' so the news feed query includes it.
             # videoUrl field still holds the video — app can play it.
-            'mediaType':  'article',
+            'mediaType':      'article',
         }
 
         news_id = post_news(article)

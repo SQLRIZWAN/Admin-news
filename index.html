@@ -214,6 +214,147 @@ var CLOUDINARY = {
   folder: 'sql_users',
   uploadUrl: 'https://api.cloudinary.com/v1_1/debp1kjtm/auto/upload'
 };
+
+// ── Cloudinary asset delete ───────────────────────────────────
+// Extract public_id + resource type from a Cloudinary secure URL, or use stored fields.
+// Signed destroy requires api_key+api_secret stored in localStorage (admin-only; enter once via Settings).
+var cloudinaryPublicIdFromUrl = function cloudinaryPublicIdFromUrl(url) {
+  if (!url || typeof url !== 'string' || !url.includes('res.cloudinary.com')) return null;
+  try {
+    var m = url.match(/res\.cloudinary\.com\/[^/]+\/(image|video|raw)\/upload\/(?:[^/]+\/)*(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/);
+    if (!m) return null;
+    return {
+      resourceType: m[1],
+      publicId: m[2]
+    };
+  } catch (_unused) {
+    return null;
+  }
+};
+var _sha1Hex = /*#__PURE__*/function () {
+  var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(msg) {
+    var buf;
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return crypto.subtle.digest('SHA-1', new TextEncoder().encode(msg));
+        case 1:
+          buf = _context.v;
+          return _context.a(2, Array.from(new Uint8Array(buf)).map(function (b) {
+            return b.toString(16).padStart(2, '0');
+          }).join(''));
+      }
+    }, _callee);
+  }));
+  return function _sha1Hex(_x) {
+    return _ref.apply(this, arguments);
+  };
+}();
+var cloudinaryDestroy = /*#__PURE__*/function () {
+  var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(publicId) {
+    var resourceType,
+      apiKey,
+      apiSecret,
+      ts,
+      signature,
+      url,
+      body,
+      res,
+      data,
+      _args2 = arguments,
+      _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          resourceType = _args2.length > 1 && _args2[1] !== undefined ? _args2[1] : 'image';
+          apiKey = localStorage.getItem('cld_api_key') || '';
+          apiSecret = localStorage.getItem('cld_api_secret') || '';
+          if (!(!publicId || !apiKey || !apiSecret)) {
+            _context2.n = 1;
+            break;
+          }
+          return _context2.a(2, false);
+        case 1:
+          ts = Math.floor(Date.now() / 1000);
+          _context2.n = 2;
+          return _sha1Hex("public_id=".concat(publicId, "&timestamp=").concat(ts).concat(apiSecret));
+        case 2:
+          signature = _context2.v;
+          url = "https://api.cloudinary.com/v1_1/".concat(CLOUDINARY.cloudName, "/").concat(resourceType, "/destroy");
+          body = new FormData();
+          body.append('public_id', publicId);
+          body.append('api_key', apiKey);
+          body.append('timestamp', String(ts));
+          body.append('signature', signature);
+          _context2.p = 3;
+          _context2.n = 4;
+          return fetch(url, {
+            method: 'POST',
+            body: body
+          });
+        case 4:
+          res = _context2.v;
+          _context2.n = 5;
+          return res.json();
+        case 5:
+          data = _context2.v;
+          return _context2.a(2, data.result === 'ok' || data.result === 'not found');
+        case 6:
+          _context2.p = 6;
+          _t = _context2.v;
+          console.warn('Cloudinary destroy error:', _t);
+          return _context2.a(2, false);
+      }
+    }, _callee2, null, [[3, 6]]);
+  }));
+  return function cloudinaryDestroy(_x2) {
+    return _ref2.apply(this, arguments);
+  };
+}();
+// Delete video + thumbnail from Cloudinary if credentials available.
+var deleteCloudinaryAssetsFor = /*#__PURE__*/function () {
+  var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(article) {
+    var jobs, p, _i, _arr, f, _p, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          jobs = [];
+          if (article.videoPublicId) jobs.push(cloudinaryDestroy(article.videoPublicId, 'video'));else if (article.videoUrl) {
+            p = cloudinaryPublicIdFromUrl(article.videoUrl);
+            if (p) jobs.push(cloudinaryDestroy(p.publicId, p.resourceType));
+          }
+          if (article.imagePublicId) jobs.push(cloudinaryDestroy(article.imagePublicId, 'image'));else {
+            for (_i = 0, _arr = ['thumbnail', 'imageUrl']; _i < _arr.length; _i++) {
+              f = _arr[_i];
+              _p = cloudinaryPublicIdFromUrl(article[f]);
+              if (_p) jobs.push(cloudinaryDestroy(_p.publicId, _p.resourceType));
+            }
+          }
+          if (jobs.length) {
+            _context3.n = 1;
+            break;
+          }
+          return _context3.a(2);
+        case 1:
+          _context3.p = 1;
+          _context3.n = 2;
+          return Promise.all(jobs);
+        case 2:
+          _context3.n = 4;
+          break;
+        case 3:
+          _context3.p = 3;
+          _t2 = _context3.v;
+        case 4:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[1, 3]]);
+  }));
+  return function deleteCloudinaryAssetsFor(_x3) {
+    return _ref3.apply(this, arguments);
+  };
+}();
 var AD_POSITIONS = ['top_banner', 'in_feed', 'sidebar_top', 'sidebar_bottom', 'footer'];
 
 // ── AI Config (Puter.js — no API key needed) ──────────────────
@@ -261,20 +402,20 @@ var PUTER_MODELS = [{
   label: 'DeepSeek Reasoner'
 }];
 var callAI = /*#__PURE__*/function () {
-  var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(userPrompt) {
-    var _i, _PUTER_MODELS, _PUTER_MODELS$_i, id, label, _res$message, _res$message2, res, text, _t;
-    return _regenerator().w(function (_context) {
-      while (1) switch (_context.p = _context.n) {
+  var _ref4 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(userPrompt) {
+    var _i2, _PUTER_MODELS, _PUTER_MODELS$_i, id, label, _res$message, _res$message2, res, text, _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
         case 0:
-          _i = 0, _PUTER_MODELS = PUTER_MODELS;
+          _i2 = 0, _PUTER_MODELS = PUTER_MODELS;
         case 1:
-          if (!(_i < _PUTER_MODELS.length)) {
-            _context.n = 7;
+          if (!(_i2 < _PUTER_MODELS.length)) {
+            _context4.n = 7;
             break;
           }
-          _PUTER_MODELS$_i = _PUTER_MODELS[_i], id = _PUTER_MODELS$_i.id, label = _PUTER_MODELS$_i.label;
-          _context.p = 2;
-          _context.n = 3;
+          _PUTER_MODELS$_i = _PUTER_MODELS[_i2], id = _PUTER_MODELS$_i.id, label = _PUTER_MODELS$_i.label;
+          _context4.p = 2;
+          _context4.n = 3;
           return Promise.race([puter.ai.chat(userPrompt, {
             model: id
           }), new Promise(function (_, rej) {
@@ -283,7 +424,7 @@ var callAI = /*#__PURE__*/function () {
             }, 45000);
           })]);
         case 3:
-          res = _context.v;
+          res = _context4.v;
           text = '';
           if (typeof res === 'string') text = res;else if (typeof (res === null || res === void 0 || (_res$message = res.message) === null || _res$message === void 0 ? void 0 : _res$message.content) === 'string') text = res.message.content;else if (Array.isArray(res === null || res === void 0 || (_res$message2 = res.message) === null || _res$message2 === void 0 ? void 0 : _res$message2.content)) text = res.message.content.filter(function (b) {
             return b.type === 'text';
@@ -291,32 +432,32 @@ var callAI = /*#__PURE__*/function () {
             return b.text;
           }).join('');else if (res !== null && res !== void 0 && res.text) text = res.text;
           if (!text.trim()) {
-            _context.n = 4;
+            _context4.n = 4;
             break;
           }
           console.log("\u2705 AI: ".concat(label));
-          return _context.a(2, text);
+          return _context4.a(2, text);
         case 4:
-          _context.n = 6;
+          _context4.n = 6;
           break;
         case 5:
-          _context.p = 5;
-          _t = _context.v;
-          console.warn("\u26A0\uFE0F ".concat(label, ": ").concat(_t.message));
-          return _context.a(3, 6);
+          _context4.p = 5;
+          _t3 = _context4.v;
+          console.warn("\u26A0\uFE0F ".concat(label, ": ").concat(_t3.message));
+          return _context4.a(3, 6);
         case 6:
-          _i++;
-          _context.n = 1;
+          _i2++;
+          _context4.n = 1;
           break;
         case 7:
           throw new Error('All AI models unavailable. Please try again.');
         case 8:
-          return _context.a(2);
+          return _context4.a(2);
       }
-    }, _callee, null, [[2, 5]]);
+    }, _callee4, null, [[2, 5]]);
   }));
-  return function callAI(_x) {
-    return _ref.apply(this, arguments);
+  return function callAI(_x4) {
+    return _ref4.apply(this, arguments);
   };
 }();
 var callGemini = callAI;
@@ -349,27 +490,27 @@ var parseJsonFromText = function parseJsonFromText(text) {
   return null;
 };
 var fetchPixabay = /*#__PURE__*/function () {
-  var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(q) {
+  var _ref5 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(q) {
     var _data$hits, _data$hits2;
     var url, res, data;
-    return _regenerator().w(function (_context2) {
-      while (1) switch (_context2.n) {
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.n) {
         case 0:
           url = "https://pixabay.com/api/?key=".concat(AI_CFG.pixabayKey, "&q=").concat(encodeURIComponent(q), "&image_type=photo&per_page=5&safesearch=true&orientation=horizontal&min_width=800");
-          _context2.n = 1;
+          _context5.n = 1;
           return fetch(url);
         case 1:
-          res = _context2.v;
-          _context2.n = 2;
+          res = _context5.v;
+          _context5.n = 2;
           return res.json();
         case 2:
-          data = _context2.v;
-          return _context2.a(2, ((_data$hits = data.hits) === null || _data$hits === void 0 || (_data$hits = _data$hits[0]) === null || _data$hits === void 0 ? void 0 : _data$hits.largeImageURL) || ((_data$hits2 = data.hits) === null || _data$hits2 === void 0 || (_data$hits2 = _data$hits2[0]) === null || _data$hits2 === void 0 ? void 0 : _data$hits2.webformatURL) || null);
+          data = _context5.v;
+          return _context5.a(2, ((_data$hits = data.hits) === null || _data$hits === void 0 || (_data$hits = _data$hits[0]) === null || _data$hits === void 0 ? void 0 : _data$hits.largeImageURL) || ((_data$hits2 = data.hits) === null || _data$hits2 === void 0 || (_data$hits2 = _data$hits2[0]) === null || _data$hits2 === void 0 ? void 0 : _data$hits2.webformatURL) || null);
       }
-    }, _callee2);
+    }, _callee5);
   }));
-  return function fetchPixabay(_x2) {
-    return _ref2.apply(this, arguments);
+  return function fetchPixabay(_x5) {
+    return _ref5.apply(this, arguments);
   };
 }();
 var pollinationsUrl = function pollinationsUrl(prompt) {
@@ -414,12 +555,12 @@ var ctr = function ctr(a) {
 };
 
 // ── SVG Icons ─────────────────────────────────────────────────
-var Ic = function Ic(_ref3) {
-  var n = _ref3.n,
-    _ref3$s = _ref3.s,
-    s = _ref3$s === void 0 ? 18 : _ref3$s,
-    _ref3$c = _ref3.c,
-    c = _ref3$c === void 0 ? 'currentColor' : _ref3$c;
+var Ic = function Ic(_ref6) {
+  var n = _ref6.n,
+    _ref6$s = _ref6.s,
+    s = _ref6$s === void 0 ? 18 : _ref6$s,
+    _ref6$c = _ref6.c,
+    c = _ref6$c === void 0 ? 'currentColor' : _ref6$c;
   var p = {
     grid: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
       x: "3",
@@ -721,8 +862,8 @@ var Ic = function Ic(_ref3) {
 };
 
 // ── Toast ──────────────────────────────────────────────────────
-var ToastList = function ToastList(_ref4) {
-  var list = _ref4.list;
+var ToastList = function ToastList(_ref7) {
+  var list = _ref7.list;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'fixed',
@@ -793,10 +934,10 @@ var useToast = function useToast() {
 };
 
 // ── Confirm ────────────────────────────────────────────────────
-var Confirm = function Confirm(_ref5) {
-  var msg = _ref5.msg,
-    onYes = _ref5.onYes,
-    onNo = _ref5.onNo;
+var Confirm = function Confirm(_ref8) {
+  var msg = _ref8.msg,
+    onYes = _ref8.onYes,
+    onNo = _ref8.onNo;
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-bg scale-in",
     onClick: onNo
@@ -866,13 +1007,13 @@ var Confirm = function Confirm(_ref5) {
 };
 
 // ── Media Upload (Image + Video) ──────────────────────────────
-var ImgUpload = function ImgUpload(_ref6) {
-  var value = _ref6.value,
-    onChange = _ref6.onChange,
-    _ref6$label = _ref6.label,
-    label = _ref6$label === void 0 ? 'Image' : _ref6$label,
-    _ref6$accept = _ref6.accept,
-    accept = _ref6$accept === void 0 ? 'both' : _ref6$accept;
+var ImgUpload = function ImgUpload(_ref9) {
+  var value = _ref9.value,
+    onChange = _ref9.onChange,
+    _ref9$label = _ref9.label,
+    label = _ref9$label === void 0 ? 'Image' : _ref9$label,
+    _ref9$accept = _ref9.accept,
+    accept = _ref9$accept === void 0 ? 'both' : _ref9$accept;
   var _useState3 = useState(false),
     _useState4 = _slicedToArray(_useState3, 2),
     busy = _useState4[0],
@@ -1250,10 +1391,10 @@ var ImgUpload = function ImgUpload(_ref6) {
 };
 
 // ── Field ──────────────────────────────────────────────────────
-var Field = function Field(_ref7) {
-  var label = _ref7.label,
-    children = _ref7.children,
-    required = _ref7.required;
+var Field = function Field(_ref0) {
+  var label = _ref0.label,
+    children = _ref0.children,
+    required = _ref0.required;
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 11,
@@ -1271,8 +1412,8 @@ var Field = function Field(_ref7) {
 };
 
 // ── LOGIN PAGE ─────────────────────────────────────────────────
-var Login = function Login(_ref8) {
-  var onLogin = _ref8.onLogin;
+var Login = function Login(_ref1) {
+  var onLogin = _ref1.onLogin;
   var _useState1 = useState(''),
     _useState10 = _slicedToArray(_useState1, 2),
     email = _useState10[0],
@@ -1290,37 +1431,37 @@ var Login = function Login(_ref8) {
     busy = _useState16[0],
     setBusy = _useState16[1];
   var submit = /*#__PURE__*/function () {
-    var _ref9 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(e) {
-      var c, _t2;
-      return _regenerator().w(function (_context3) {
-        while (1) switch (_context3.p = _context3.n) {
+    var _ref10 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(e) {
+      var c, _t4;
+      return _regenerator().w(function (_context6) {
+        while (1) switch (_context6.p = _context6.n) {
           case 0:
             e.preventDefault();
             setErr('');
             setBusy(true);
-            _context3.p = 1;
-            _context3.n = 2;
+            _context6.p = 1;
+            _context6.n = 2;
             return auth.signInWithEmailAndPassword(email, pass);
           case 2:
-            c = _context3.v;
+            c = _context6.v;
             onLogin(c.user);
-            _context3.n = 4;
+            _context6.n = 4;
             break;
           case 3:
-            _context3.p = 3;
-            _t2 = _context3.v;
+            _context6.p = 3;
+            _t4 = _context6.v;
             setErr('Incorrect email or password');
           case 4:
-            _context3.p = 4;
+            _context6.p = 4;
             setBusy(false);
-            return _context3.f(4);
+            return _context6.f(4);
           case 5:
-            return _context3.a(2);
+            return _context6.a(2);
         }
-      }, _callee3, null, [[1, 3, 4, 5]]);
+      }, _callee6, null, [[1, 3, 4, 5]]);
     }));
-    return function submit(_x3) {
-      return _ref9.apply(this, arguments);
+    return function submit(_x6) {
+      return _ref10.apply(this, arguments);
     };
   }();
   return /*#__PURE__*/React.createElement("div", {
@@ -1897,9 +2038,9 @@ var BLANK = {
 };
 
 // ── Logo Picker ────────────────────────────────────────────────
-var LogoPicker = function LogoPicker(_ref0) {
-  var value = _ref0.value,
-    onSelect = _ref0.onSelect;
+var LogoPicker = function LogoPicker(_ref11) {
+  var value = _ref11.value,
+    onSelect = _ref11.onSelect;
   var _useState27 = useState(false),
     _useState28 = _slicedToArray(_useState27, 2),
     open = _useState28[0],
@@ -1933,54 +2074,54 @@ var LogoPicker = function LogoPicker(_ref0) {
     saving = _useState42[0],
     setSaving = _useState42[1];
   var loadLogos = /*#__PURE__*/function () {
-    var _ref1 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
-      var snap, _t3;
-      return _regenerator().w(function (_context4) {
-        while (1) switch (_context4.p = _context4.n) {
+    var _ref12 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+      var snap, _t5;
+      return _regenerator().w(function (_context7) {
+        while (1) switch (_context7.p = _context7.n) {
           case 0:
             setLoading(true);
-            _context4.p = 1;
-            _context4.n = 2;
+            _context7.p = 1;
+            _context7.n = 2;
             return db.collection('logos').orderBy('name').get();
           case 2:
-            snap = _context4.v;
+            snap = _context7.v;
             setLogos(snap.docs.map(function (d) {
               return _objectSpread({
                 id: d.id
               }, d.data());
             }));
-            _context4.n = 4;
+            _context7.n = 4;
             break;
           case 3:
-            _context4.p = 3;
-            _t3 = _context4.v;
+            _context7.p = 3;
+            _t5 = _context7.v;
           case 4:
             setLoading(false);
           case 5:
-            return _context4.a(2);
+            return _context7.a(2);
         }
-      }, _callee4, null, [[1, 3]]);
+      }, _callee7, null, [[1, 3]]);
     }));
     return function loadLogos() {
-      return _ref1.apply(this, arguments);
+      return _ref12.apply(this, arguments);
     };
   }();
   useEffect(function () {
     if (open) loadLogos();
   }, [open]);
   var addLogo = /*#__PURE__*/function () {
-    var _ref10 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
-      return _regenerator().w(function (_context5) {
-        while (1) switch (_context5.n) {
+    var _ref13 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+      return _regenerator().w(function (_context8) {
+        while (1) switch (_context8.n) {
           case 0:
             if (!(!newUrl || !newName.trim())) {
-              _context5.n = 1;
+              _context8.n = 1;
               break;
             }
-            return _context5.a(2);
+            return _context8.a(2);
           case 1:
             setSaving(true);
-            _context5.n = 2;
+            _context8.n = 2;
             return db.collection('logos').add({
               url: newUrl,
               name: newName.trim(),
@@ -1993,21 +2134,21 @@ var LogoPicker = function LogoPicker(_ref0) {
             setTab('select');
             loadLogos();
           case 3:
-            return _context5.a(2);
+            return _context8.a(2);
         }
-      }, _callee5);
+      }, _callee8);
     }));
     return function addLogo() {
-      return _ref10.apply(this, arguments);
+      return _ref13.apply(this, arguments);
     };
   }();
   var deleteLogo = /*#__PURE__*/function () {
-    var _ref11 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(id, e) {
-      return _regenerator().w(function (_context6) {
-        while (1) switch (_context6.n) {
+    var _ref14 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9(id, e) {
+      return _regenerator().w(function (_context9) {
+        while (1) switch (_context9.n) {
           case 0:
             e.stopPropagation();
-            _context6.n = 1;
+            _context9.n = 1;
             return db.collection('logos').doc(id)["delete"]();
           case 1:
             setLogos(function (p) {
@@ -2016,12 +2157,12 @@ var LogoPicker = function LogoPicker(_ref0) {
               });
             });
           case 2:
-            return _context6.a(2);
+            return _context9.a(2);
         }
-      }, _callee6);
+      }, _callee9);
     }));
-    return function deleteLogo(_x4, _x5) {
-      return _ref11.apply(this, arguments);
+    return function deleteLogo(_x7, _x8) {
+      return _ref14.apply(this, arguments);
     };
   }();
   var filtered = logos.filter(function (l) {
@@ -2408,12 +2549,12 @@ var LogoPicker = function LogoPicker(_ref0) {
     }
   }, saving ? 'Saving...' : '💾 Add to Collection'))))));
 };
-var NewsForm = function NewsForm(_ref12) {
-  var editing = _ref12.editing,
-    initialForm = _ref12.initialForm,
-    onSave = _ref12.onSave,
-    onCancel = _ref12.onCancel,
-    toast = _ref12.toast;
+var NewsForm = function NewsForm(_ref15) {
+  var editing = _ref15.editing,
+    initialForm = _ref15.initialForm,
+    onSave = _ref15.onSave,
+    onCancel = _ref15.onCancel,
+    toast = _ref15.toast;
   var _useState43 = useState(initialForm || BLANK),
     _useState44 = _slicedToArray(_useState43, 2),
     form = _useState44[0],
@@ -2436,38 +2577,38 @@ var NewsForm = function NewsForm(_ref12) {
     });
   }, []);
   var save = /*#__PURE__*/function () {
-    var _ref13 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
-      var d, _d, _t4;
-      return _regenerator().w(function (_context7) {
-        while (1) switch (_context7.p = _context7.n) {
+    var _ref16 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0() {
+      var d, _d, _t6;
+      return _regenerator().w(function (_context0) {
+        while (1) switch (_context0.p = _context0.n) {
           case 0:
             if (form.title.trim()) {
-              _context7.n = 1;
+              _context0.n = 1;
               break;
             }
             toast.add('Title is required', 'error');
-            return _context7.a(2);
+            return _context0.a(2);
           case 1:
             if (form.summary.trim()) {
-              _context7.n = 2;
+              _context0.n = 2;
               break;
             }
             toast.add('Summary is required', 'error');
-            return _context7.a(2);
+            return _context0.a(2);
           case 2:
             setSaving(true);
-            _context7.p = 3;
+            _context0.p = 3;
             if (!editing) {
-              _context7.n = 5;
+              _context0.n = 5;
               break;
             }
             d = _objectSpread({}, form);
             delete d.timestamp;
-            _context7.n = 4;
+            _context0.n = 4;
             return db.collection('news').doc(editing).update(d);
           case 4:
             toast.add('Article updated successfully!');
-            _context7.n = 7;
+            _context0.n = 7;
             break;
           case 5:
             _d = _objectSpread(_objectSpread({}, form), {}, {
@@ -2479,29 +2620,29 @@ var NewsForm = function NewsForm(_ref12) {
               likes: 0,
               commentCount: 0
             });
-            _context7.n = 6;
+            _context0.n = 6;
             return db.collection('news').add(_d);
           case 6:
             toast.add('Article published successfully!');
           case 7:
             onSave();
-            _context7.n = 9;
+            _context0.n = 9;
             break;
           case 8:
-            _context7.p = 8;
-            _t4 = _context7.v;
-            toast.add(_t4.message, 'error');
+            _context0.p = 8;
+            _t6 = _context0.v;
+            toast.add(_t6.message, 'error');
           case 9:
-            _context7.p = 9;
+            _context0.p = 9;
             setSaving(false);
-            return _context7.f(9);
+            return _context0.f(9);
           case 10:
-            return _context7.a(2);
+            return _context0.a(2);
         }
-      }, _callee7, null, [[3, 8, 9, 10]]);
+      }, _callee0, null, [[3, 8, 9, 10]]);
     }));
     return function save() {
-      return _ref13.apply(this, arguments);
+      return _ref16.apply(this, arguments);
     };
   }();
   return /*#__PURE__*/React.createElement("div", {
@@ -3034,10 +3175,10 @@ var NewsForm = function NewsForm(_ref12) {
 };
 
 // ── NEWS MANAGER ───────────────────────────────────────────────
-var NewsManager = function NewsManager(_ref14) {
-  var toast = _ref14.toast,
-    _ref14$initCat = _ref14.initCat,
-    initCat = _ref14$initCat === void 0 ? 'all' : _ref14$initCat;
+var NewsManager = function NewsManager(_ref17) {
+  var toast = _ref17.toast,
+    _ref17$initCat = _ref17.initCat,
+    initCat = _ref17$initCat === void 0 ? 'all' : _ref17$initCat;
   var C = window.__newsCache;
   var _useState47 = useState(C.list || []),
     _useState48 = _slicedToArray(_useState47, 2),
@@ -3075,7 +3216,7 @@ var NewsManager = function NewsManager(_ref14) {
     _useState64 = _slicedToArray(_useState63, 2),
     cat = _useState64[0],
     setCat = _useState64[1];
-  var _useState65 = useState('published'),
+  var _useState65 = useState('all'),
     _useState66 = _slicedToArray(_useState65, 2),
     statusFilter = _useState66[0],
     setStatusFilter = _useState66[1]; // 'published' | 'draft' | 'all'
@@ -3083,7 +3224,7 @@ var NewsManager = function NewsManager(_ref14) {
     _useState68 = _slicedToArray(_useState67, 2),
     videoPlayId = _useState68[0],
     setVideoPlayId = _useState68[1]; // which article video is playing
-  var _useState69 = useState(40),
+  var _useState69 = useState(200),
     _useState70 = _slicedToArray(_useState69, 2),
     displayCount = _useState70[0],
     setDisplayCount = _useState70[1]; // virtual cap for large lists
@@ -3145,71 +3286,84 @@ var NewsManager = function NewsManager(_ref14) {
     setFormInit(BLANK);
   };
   var del = /*#__PURE__*/function () {
-    var _ref15 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(id) {
-      var _t5;
-      return _regenerator().w(function (_context8) {
-        while (1) switch (_context8.p = _context8.n) {
+    var _ref18 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1(id) {
+      var article, _t7;
+      return _regenerator().w(function (_context1) {
+        while (1) switch (_context1.p = _context1.n) {
           case 0:
-            _context8.p = 0;
-            _context8.n = 1;
+            _context1.p = 0;
+            article = news.find(function (n) {
+              return n.id === id;
+            }) || {}; // Delete Cloudinary assets first (best-effort, non-blocking if creds missing)
+            deleteCloudinaryAssetsFor(article)["catch"](function () {});
+            _context1.n = 1;
             return db.collection('news').doc(id)["delete"]();
           case 1:
-            toast.add('Article deleted');
-            _context8.n = 3;
+            // Remove from local cache so the UI doesn't flash the deleted item back
+            if (window.__newsCache) {
+              window.__newsCache.list = (window.__newsCache.list || []).filter(function (n) {
+                return n.id !== id;
+              });
+              window.__newsCache.dashRecent = (window.__newsCache.dashRecent || []).filter(function (n) {
+                return n.id !== id;
+              });
+            }
+            toast.add('Article deleted (DB + Cloudinary)');
+            _context1.n = 3;
             break;
           case 2:
-            _context8.p = 2;
-            _t5 = _context8.v;
-            toast.add(_t5.message, 'error');
+            _context1.p = 2;
+            _t7 = _context1.v;
+            toast.add(_t7.message, 'error');
           case 3:
             setConfirm(null);
           case 4:
-            return _context8.a(2);
+            return _context1.a(2);
         }
-      }, _callee8, null, [[0, 2]]);
+      }, _callee1, null, [[0, 2]]);
     }));
-    return function del(_x6) {
-      return _ref15.apply(this, arguments);
+    return function del(_x9) {
+      return _ref18.apply(this, arguments);
     };
   }();
   var toggleBreaking = /*#__PURE__*/function () {
-    var _ref16 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9(id, val) {
-      return _regenerator().w(function (_context9) {
-        while (1) switch (_context9.n) {
+    var _ref19 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee10(id, val) {
+      return _regenerator().w(function (_context10) {
+        while (1) switch (_context10.n) {
           case 0:
-            _context9.n = 1;
+            _context10.n = 1;
             return db.collection('news').doc(id).update({
               isBreaking: !val
             });
           case 1:
             toast.add(!val ? 'Marked as Breaking!' : 'Breaking removed');
           case 2:
-            return _context9.a(2);
+            return _context10.a(2);
         }
-      }, _callee9);
+      }, _callee10);
     }));
-    return function toggleBreaking(_x7, _x8) {
-      return _ref16.apply(this, arguments);
+    return function toggleBreaking(_x0, _x1) {
+      return _ref19.apply(this, arguments);
     };
   }();
   var toggleHidden = /*#__PURE__*/function () {
-    var _ref17 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0(id, val) {
-      return _regenerator().w(function (_context0) {
-        while (1) switch (_context0.n) {
+    var _ref20 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee11(id, val) {
+      return _regenerator().w(function (_context11) {
+        while (1) switch (_context11.n) {
           case 0:
-            _context0.n = 1;
+            _context11.n = 1;
             return db.collection('news').doc(id).update({
               hidden: !val
             });
           case 1:
             toast.add(!val ? 'Article hidden' : 'Article visible');
           case 2:
-            return _context0.a(2);
+            return _context11.a(2);
         }
-      }, _callee0);
+      }, _callee11);
     }));
-    return function toggleHidden(_x9, _x0) {
-      return _ref17.apply(this, arguments);
+    return function toggleHidden(_x10, _x11) {
+      return _ref20.apply(this, arguments);
     };
   }();
   var filtered = useMemo(function () {
@@ -3334,9 +3488,9 @@ var NewsManager = function NewsManager(_ref14) {
   }, {
     v: 'all',
     label: '📋 All'
-  }].map(function (_ref18) {
-    var v = _ref18.v,
-      label = _ref18.label;
+  }].map(function (_ref21) {
+    var v = _ref21.v,
+      label = _ref21.label;
     return /*#__PURE__*/React.createElement("button", {
       key: v,
       onClick: function onClick() {
@@ -3371,9 +3525,9 @@ var NewsManager = function NewsManager(_ref14) {
       v: c.value,
       label: c.label
     };
-  }))).map(function (_ref19) {
-    var v = _ref19.v,
-      label = _ref19.label;
+  }))).map(function (_ref22) {
+    var v = _ref22.v,
+      label = _ref22.label;
     return /*#__PURE__*/React.createElement("button", {
       key: v,
       onClick: function onClick() {
@@ -3614,11 +3768,11 @@ var NewsManager = function NewsManager(_ref14) {
         borderColor: 'rgba(52,211,153,.4)',
         color: '#34d399'
       },
-      onClick: /*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1() {
-        return _regenerator().w(function (_context1) {
-          while (1) switch (_context1.n) {
+      onClick: /*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee12() {
+        return _regenerator().w(function (_context12) {
+          while (1) switch (_context12.n) {
             case 0:
-              _context1.n = 1;
+              _context12.n = 1;
               return db.collection('news').doc(n.id).update({
                 hidden: false,
                 published: true,
@@ -3627,9 +3781,9 @@ var NewsManager = function NewsManager(_ref14) {
             case 1:
               toast.add('✅ Published!');
             case 2:
-              return _context1.a(2);
+              return _context12.a(2);
           }
-        }, _callee1);
+        }, _callee12);
       }))
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "send",
@@ -3748,12 +3902,12 @@ var BLANK_AD = {
   impressions: 0,
   clicks: 0
 };
-var AdsForm = function AdsForm(_ref21) {
-  var editing = _ref21.editing,
-    initialForm = _ref21.initialForm,
-    onSave = _ref21.onSave,
-    onCancel = _ref21.onCancel,
-    toast = _ref21.toast;
+var AdsForm = function AdsForm(_ref24) {
+  var editing = _ref24.editing,
+    initialForm = _ref24.initialForm,
+    onSave = _ref24.onSave,
+    onCancel = _ref24.onCancel,
+    toast = _ref24.toast;
   var _useState71 = useState(initialForm || BLANK_AD),
     _useState72 = _slicedToArray(_useState71, 2),
     form = _useState72[0],
@@ -3774,33 +3928,33 @@ var AdsForm = function AdsForm(_ref21) {
     });
   }, []);
   var save = /*#__PURE__*/function () {
-    var _ref22 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee10() {
-      var d, _d2, _t6;
-      return _regenerator().w(function (_context10) {
-        while (1) switch (_context10.p = _context10.n) {
+    var _ref25 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee13() {
+      var d, _d2, _t8;
+      return _regenerator().w(function (_context13) {
+        while (1) switch (_context13.p = _context13.n) {
           case 0:
             if (form.title.trim()) {
-              _context10.n = 1;
+              _context13.n = 1;
               break;
             }
             toast.add('Title required', 'error');
-            return _context10.a(2);
+            return _context13.a(2);
           case 1:
             setSaving(true);
-            _context10.p = 2;
+            _context13.p = 2;
             if (!editing) {
-              _context10.n = 4;
+              _context13.n = 4;
               break;
             }
             d = _objectSpread({}, form);
             delete d.createdAt;
             delete d.impressions;
             delete d.clicks;
-            _context10.n = 3;
+            _context13.n = 3;
             return db.collection('ads').doc(editing).update(d);
           case 3:
             toast.add('Ad updated!');
-            _context10.n = 6;
+            _context13.n = 6;
             break;
           case 4:
             _d2 = _objectSpread(_objectSpread({}, form), {}, {
@@ -3808,29 +3962,29 @@ var AdsForm = function AdsForm(_ref21) {
               impressions: 0,
               clicks: 0
             });
-            _context10.n = 5;
+            _context13.n = 5;
             return db.collection('ads').add(_d2);
           case 5:
             toast.add('Ad created!');
           case 6:
             onSave();
-            _context10.n = 8;
+            _context13.n = 8;
             break;
           case 7:
-            _context10.p = 7;
-            _t6 = _context10.v;
-            toast.add(_t6.message, 'error');
+            _context13.p = 7;
+            _t8 = _context13.v;
+            toast.add(_t8.message, 'error');
           case 8:
-            _context10.p = 8;
+            _context13.p = 8;
             setSaving(false);
-            return _context10.f(8);
+            return _context13.f(8);
           case 9:
-            return _context10.a(2);
+            return _context13.a(2);
         }
-      }, _callee10, null, [[2, 7, 8, 9]]);
+      }, _callee13, null, [[2, 7, 8, 9]]);
     }));
     return function save() {
-      return _ref22.apply(this, arguments);
+      return _ref25.apply(this, arguments);
     };
   }();
   return /*#__PURE__*/React.createElement("div", {
@@ -4103,8 +4257,8 @@ var AdsForm = function AdsForm(_ref21) {
     s: 16
   }), editing ? 'Update Ad' : 'Create Ad'))));
 };
-var AdsManager = function AdsManager(_ref23) {
-  var toast = _ref23.toast;
+var AdsManager = function AdsManager(_ref26) {
+  var toast = _ref26.toast;
   var _useState75 = useState([]),
     _useState76 = _slicedToArray(_useState75, 2),
     ads = _useState76[0],
@@ -4161,51 +4315,51 @@ var AdsManager = function AdsManager(_ref23) {
     setFormInit(BLANK_AD);
   };
   var del = /*#__PURE__*/function () {
-    var _ref24 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee11(id) {
-      var _t7;
-      return _regenerator().w(function (_context11) {
-        while (1) switch (_context11.p = _context11.n) {
+    var _ref27 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee14(id) {
+      var _t9;
+      return _regenerator().w(function (_context14) {
+        while (1) switch (_context14.p = _context14.n) {
           case 0:
-            _context11.p = 0;
-            _context11.n = 1;
+            _context14.p = 0;
+            _context14.n = 1;
             return db.collection('ads').doc(id)["delete"]();
           case 1:
             toast.add('Deleted');
-            _context11.n = 3;
+            _context14.n = 3;
             break;
           case 2:
-            _context11.p = 2;
-            _t7 = _context11.v;
-            toast.add(_t7.message, 'error');
+            _context14.p = 2;
+            _t9 = _context14.v;
+            toast.add(_t9.message, 'error');
           case 3:
             setConfirm(null);
           case 4:
-            return _context11.a(2);
+            return _context14.a(2);
         }
-      }, _callee11, null, [[0, 2]]);
+      }, _callee14, null, [[0, 2]]);
     }));
-    return function del(_x1) {
-      return _ref24.apply(this, arguments);
+    return function del(_x12) {
+      return _ref27.apply(this, arguments);
     };
   }();
   var toggleActive = /*#__PURE__*/function () {
-    var _ref25 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee12(id, val) {
-      return _regenerator().w(function (_context12) {
-        while (1) switch (_context12.n) {
+    var _ref28 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee15(id, val) {
+      return _regenerator().w(function (_context15) {
+        while (1) switch (_context15.n) {
           case 0:
-            _context12.n = 1;
+            _context15.n = 1;
             return db.collection('ads').doc(id).update({
               active: !val
             });
           case 1:
             toast.add(!val ? 'Ad activated' : 'Ad paused');
           case 2:
-            return _context12.a(2);
+            return _context15.a(2);
         }
-      }, _callee12);
+      }, _callee15);
     }));
-    return function toggleActive(_x10, _x11) {
-      return _ref25.apply(this, arguments);
+    return function toggleActive(_x13, _x14) {
+      return _ref28.apply(this, arguments);
     };
   }();
 
@@ -4465,8 +4619,8 @@ var AdsManager = function AdsManager(_ref23) {
 };
 
 // ── COMMENTS ──────────────────────────────────────────────────
-var CommentsManager = function CommentsManager(_ref26) {
-  var toast = _ref26.toast;
+var CommentsManager = function CommentsManager(_ref29) {
+  var toast = _ref29.toast;
   var _useState87 = useState([]),
     _useState88 = _slicedToArray(_useState87, 2),
     comments = _useState88[0],
@@ -4501,22 +4655,22 @@ var CommentsManager = function CommentsManager(_ref26) {
     };
   }, []);
   var del = /*#__PURE__*/function () {
-    var _ref27 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee13(id) {
-      return _regenerator().w(function (_context13) {
-        while (1) switch (_context13.n) {
+    var _ref30 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee16(id) {
+      return _regenerator().w(function (_context16) {
+        while (1) switch (_context16.n) {
           case 0:
-            _context13.n = 1;
+            _context16.n = 1;
             return db.collection('comments').doc(id)["delete"]();
           case 1:
             toast.add('Deleted');
             setConfirm(null);
           case 2:
-            return _context13.a(2);
+            return _context16.a(2);
         }
-      }, _callee13);
+      }, _callee16);
     }));
-    return function del(_x12) {
-      return _ref27.apply(this, arguments);
+    return function del(_x15) {
+      return _ref30.apply(this, arguments);
     };
   }();
   var filtered = useMemo(function () {
@@ -4600,10 +4754,10 @@ var CommentsManager = function CommentsManager(_ref26) {
       display: 'flex',
       gap: 8
     }
-  }, [['all', 'All'], ['reported', "\uD83D\uDEA8 Reported (".concat(reported, ")")]].map(function (_ref28) {
-    var _ref29 = _slicedToArray(_ref28, 2),
-      f = _ref29[0],
-      l = _ref29[1];
+  }, [['all', 'All'], ['reported', "\uD83D\uDEA8 Reported (".concat(reported, ")")]].map(function (_ref31) {
+    var _ref32 = _slicedToArray(_ref31, 2),
+      f = _ref32[0],
+      l = _ref32[1];
     return /*#__PURE__*/React.createElement("button", {
       key: f,
       onClick: function onClick() {
@@ -4754,9 +4908,9 @@ var CommentsManager = function CommentsManager(_ref26) {
 };
 
 // ── USERS ─────────────────────────────────────────────────────
-var UsersManager = function UsersManager(_ref30) {
+var UsersManager = function UsersManager(_ref33) {
   var _detailUser$providerD, _detailUser$likedPost, _detailUser$savedPost;
-  var toast = _ref30.toast;
+  var toast = _ref33.toast;
   var _useState97 = useState([]),
     _useState98 = _slicedToArray(_useState97, 2),
     users = _useState98[0],
@@ -4791,23 +4945,23 @@ var UsersManager = function UsersManager(_ref30) {
     };
   }, []);
   var toggleBlock = /*#__PURE__*/function () {
-    var _ref31 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee14(id, blocked) {
-      return _regenerator().w(function (_context14) {
-        while (1) switch (_context14.n) {
+    var _ref34 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee17(id, blocked) {
+      return _regenerator().w(function (_context17) {
+        while (1) switch (_context17.n) {
           case 0:
-            _context14.n = 1;
+            _context17.n = 1;
             return db.collection('users').doc(id).update({
               blocked: !blocked
             });
           case 1:
             toast.add(!blocked ? 'User blocked' : 'Unblocked');
           case 2:
-            return _context14.a(2);
+            return _context17.a(2);
         }
-      }, _callee14);
+      }, _callee17);
     }));
-    return function toggleBlock(_x13, _x14) {
-      return _ref31.apply(this, arguments);
+    return function toggleBlock(_x16, _x17) {
+      return _ref34.apply(this, arguments);
     };
   }();
   var filtered = useMemo(function () {
@@ -4917,10 +5071,10 @@ var UsersManager = function UsersManager(_ref30) {
       flexDirection: 'column',
       gap: 10
     }
-  }, [['📧 Email', detailUser.email || '—'], ['📱 Phone', detailUser.phoneNumber || detailUser.phone || '—'], ['🔑 Provider', providerIcon(detailUser) + ' ' + (((_detailUser$providerD = detailUser.providerData) === null || _detailUser$providerD === void 0 || (_detailUser$providerD = _detailUser$providerD[0]) === null || _detailUser$providerD === void 0 ? void 0 : _detailUser$providerD.providerId) || 'email')], ['📅 Joined', fmtDate(detailUser.createdAt)], ['❤️ Liked Posts', ((_detailUser$likedPost = detailUser.likedPosts) === null || _detailUser$likedPost === void 0 ? void 0 : _detailUser$likedPost.length) || 0], ['🔖 Saved Posts', ((_detailUser$savedPost = detailUser.savedPosts) === null || _detailUser$savedPost === void 0 ? void 0 : _detailUser$savedPost.length) || 0]].map(function (_ref32) {
-    var _ref33 = _slicedToArray(_ref32, 2),
-      k = _ref33[0],
-      v = _ref33[1];
+  }, [['📧 Email', detailUser.email || '—'], ['📱 Phone', detailUser.phoneNumber || detailUser.phone || '—'], ['🔑 Provider', providerIcon(detailUser) + ' ' + (((_detailUser$providerD = detailUser.providerData) === null || _detailUser$providerD === void 0 || (_detailUser$providerD = _detailUser$providerD[0]) === null || _detailUser$providerD === void 0 ? void 0 : _detailUser$providerD.providerId) || 'email')], ['📅 Joined', fmtDate(detailUser.createdAt)], ['❤️ Liked Posts', ((_detailUser$likedPost = detailUser.likedPosts) === null || _detailUser$likedPost === void 0 ? void 0 : _detailUser$likedPost.length) || 0], ['🔖 Saved Posts', ((_detailUser$savedPost = detailUser.savedPosts) === null || _detailUser$savedPost === void 0 ? void 0 : _detailUser$savedPost.length) || 0]].map(function (_ref35) {
+    var _ref36 = _slicedToArray(_ref35, 2),
+      k = _ref36[0],
+      v = _ref36[1];
     return /*#__PURE__*/React.createElement("div", {
       key: k,
       style: {
@@ -5051,10 +5205,10 @@ var UsersManager = function UsersManager(_ref30) {
       gap: 10,
       marginTop: 8
     }
-  }, [['name', 'By Name'], ['email', 'By Email'], ['phone', 'By Phone']].map(function (_ref34) {
-    var _ref35 = _slicedToArray(_ref34, 2),
-      t = _ref35[0],
-      l = _ref35[1];
+  }, [['name', 'By Name'], ['email', 'By Email'], ['phone', 'By Phone']].map(function (_ref37) {
+    var _ref38 = _slicedToArray(_ref37, 2),
+      t = _ref38[0],
+      l = _ref38[1];
     return /*#__PURE__*/React.createElement("div", {
       key: t,
       style: {
@@ -5266,8 +5420,8 @@ var UsersManager = function UsersManager(_ref30) {
 };
 
 // ── PUSH NOTIFICATIONS ────────────────────────────────────────
-var PushNotifs = function PushNotifs(_ref36) {
-  var toast = _ref36.toast;
+var PushNotifs = function PushNotifs(_ref39) {
+  var toast = _ref39.toast;
   var _useState107 = useState(''),
     _useState108 = _slicedToArray(_useState107, 2),
     title = _useState108[0],
@@ -5321,36 +5475,36 @@ var PushNotifs = function PushNotifs(_ref36) {
     toast.add('Key saved');
   };
   var send = /*#__PURE__*/function () {
-    var _ref37 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee15() {
-      var snap, tokens, batches, i, _t8;
-      return _regenerator().w(function (_context15) {
-        while (1) switch (_context15.p = _context15.n) {
+    var _ref40 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee18() {
+      var snap, tokens, batches, i, _t0;
+      return _regenerator().w(function (_context18) {
+        while (1) switch (_context18.p = _context18.n) {
           case 0:
             if (!(!title.trim() || !body.trim())) {
-              _context15.n = 1;
+              _context18.n = 1;
               break;
             }
             toast.add('Title and message required', 'error');
-            return _context15.a(2);
+            return _context18.a(2);
           case 1:
             setSending(true);
-            _context15.p = 2;
-            _context15.n = 3;
+            _context18.p = 2;
+            _context18.n = 3;
             return db.collection('fcm_tokens').get();
           case 3:
-            snap = _context15.v;
+            snap = _context18.v;
             tokens = snap.docs.map(function (d) {
               return d.data().token;
             }).filter(Boolean);
             if (tokens.length) {
-              _context15.n = 4;
+              _context18.n = 4;
               break;
             }
             toast.add('No subscribers', 'error');
             setSending(false);
-            return _context15.a(2);
+            return _context18.a(2);
           case 4:
-            _context15.n = 5;
+            _context18.n = 5;
             return db.collection('notification_history').add({
               title: title,
               body: body,
@@ -5360,12 +5514,12 @@ var PushNotifs = function PushNotifs(_ref36) {
             });
           case 5:
             if (!serverKey) {
-              _context15.n = 6;
+              _context18.n = 6;
               break;
             }
             batches = [];
             for (i = 0; i < tokens.length; i += 1000) batches.push(tokens.slice(i, i + 1000));
-            _context15.n = 6;
+            _context18.n = 6;
             return Promise.all(batches.map(function (batch) {
               return fetch('https://fcm.googleapis.com/fcm/send', {
                 method: 'POST',
@@ -5394,23 +5548,23 @@ var PushNotifs = function PushNotifs(_ref36) {
             toast.add("Sent to ".concat(tokens.length, " subscribers!"));
             setTitle('');
             setBody('');
-            _context15.n = 8;
+            _context18.n = 8;
             break;
           case 7:
-            _context15.p = 7;
-            _t8 = _context15.v;
-            toast.add(_t8.message, 'error');
+            _context18.p = 7;
+            _t0 = _context18.v;
+            toast.add(_t0.message, 'error');
           case 8:
-            _context15.p = 8;
+            _context18.p = 8;
             setSending(false);
-            return _context15.f(8);
+            return _context18.f(8);
           case 9:
-            return _context15.a(2);
+            return _context18.a(2);
         }
-      }, _callee15, null, [[2, 7, 8, 9]]);
+      }, _callee18, null, [[2, 7, 8, 9]]);
     }));
     return function send() {
-      return _ref37.apply(this, arguments);
+      return _ref40.apply(this, arguments);
     };
   }();
   return /*#__PURE__*/React.createElement("div", {
@@ -5682,8 +5836,8 @@ var PushNotifs = function PushNotifs(_ref36) {
 };
 
 // ── AUTOMATION ────────────────────────────────────────────────
-var AutomationPage = function AutomationPage(_ref38) {
-  var toast = _ref38.toast;
+var AutomationPage = function AutomationPage(_ref41) {
+  var toast = _ref41.toast;
   var CATS = [{
     id: 'kuwait',
     label: '🇰🇼 Kuwait',
@@ -5727,38 +5881,46 @@ var AutomationPage = function AutomationPage(_ref38) {
     _useState124 = _slicedToArray(_useState123, 2),
     pexelsKey = _useState124[0],
     setPexelsKey = _useState124[1];
-  var _useState125 = useState(!localStorage.getItem(LS_TOKEN)),
+  var _useState125 = useState(localStorage.getItem('cld_api_key') || ''),
     _useState126 = _slicedToArray(_useState125, 2),
-    showSetup = _useState126[0],
-    setShowSetup = _useState126[1];
-  var _useState127 = useState({}),
+    cldApiKey = _useState126[0],
+    setCldApiKey = _useState126[1];
+  var _useState127 = useState(localStorage.getItem('cld_api_secret') || ''),
     _useState128 = _slicedToArray(_useState127, 2),
-    configs = _useState128[0],
-    setConfigs = _useState128[1];
-  var _useState129 = useState([]),
+    cldApiSecret = _useState128[0],
+    setCldApiSecret = _useState128[1];
+  var _useState129 = useState(!localStorage.getItem(LS_TOKEN)),
     _useState130 = _slicedToArray(_useState129, 2),
-    logs = _useState130[0],
-    setLogs = _useState130[1];
-  var _useState131 = useState(false),
+    showSetup = _useState130[0],
+    setShowSetup = _useState130[1];
+  var _useState131 = useState({}),
     _useState132 = _slicedToArray(_useState131, 2),
-    showAllLogs = _useState132[0],
-    setShowAllLogs = _useState132[1];
-  var _useState133 = useState({}),
+    configs = _useState132[0],
+    setConfigs = _useState132[1];
+  var _useState133 = useState([]),
     _useState134 = _slicedToArray(_useState133, 2),
-    ghRuns = _useState134[0],
-    setGhRuns = _useState134[1];
-  var _useState135 = useState({}),
+    logs = _useState134[0],
+    setLogs = _useState134[1];
+  var _useState135 = useState(false),
     _useState136 = _slicedToArray(_useState135, 2),
-    apiStatus = _useState136[0],
-    setApiStatus = _useState136[1];
+    showAllLogs = _useState136[0],
+    setShowAllLogs = _useState136[1];
   var _useState137 = useState({}),
     _useState138 = _slicedToArray(_useState137, 2),
-    triggering = _useState138[0],
-    setTriggering = _useState138[1];
-  var _useState139 = useState(false),
+    ghRuns = _useState138[0],
+    setGhRuns = _useState138[1];
+  var _useState139 = useState({}),
     _useState140 = _slicedToArray(_useState139, 2),
-    refreshingApi = _useState140[0],
-    setRefreshingApi = _useState140[1];
+    apiStatus = _useState140[0],
+    setApiStatus = _useState140[1];
+  var _useState141 = useState({}),
+    _useState142 = _slicedToArray(_useState141, 2),
+    triggering = _useState142[0],
+    setTriggering = _useState142[1];
+  var _useState143 = useState(false),
+    _useState144 = _slicedToArray(_useState143, 2),
+    refreshingApi = _useState144[0],
+    setRefreshingApi = _useState144[1];
 
   // ── Firestore listeners ──────────────────────────────────────
   useEffect(function () {
@@ -5788,39 +5950,39 @@ var AutomationPage = function AutomationPage(_ref38) {
 
   // ── GitHub: fetch last run per workflow ──────────────────────
   var fetchGhRuns = /*#__PURE__*/function () {
-    var _ref39 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee16() {
-      var tok, headers, _loop, _i2, _CATS;
-      return _regenerator().w(function (_context17) {
-        while (1) switch (_context17.n) {
+    var _ref42 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee19() {
+      var tok, headers, _loop, _i3, _CATS;
+      return _regenerator().w(function (_context20) {
+        while (1) switch (_context20.n) {
           case 0:
             tok = localStorage.getItem(LS_TOKEN);
             if (tok) {
-              _context17.n = 1;
+              _context20.n = 1;
               break;
             }
-            return _context17.a(2);
+            return _context20.a(2);
           case 1:
             headers = {
               'Authorization': "Bearer ".concat(tok),
               'Accept': 'application/vnd.github+json'
             };
             _loop = /*#__PURE__*/_regenerator().m(function _loop() {
-              var cat, _d$workflow_runs, r, d, run, _t9;
-              return _regenerator().w(function (_context16) {
-                while (1) switch (_context16.p = _context16.n) {
+              var cat, _d$workflow_runs, r, d, run, _t1;
+              return _regenerator().w(function (_context19) {
+                while (1) switch (_context19.p = _context19.n) {
                   case 0:
-                    cat = _CATS[_i2];
-                    _context16.p = 1;
-                    _context16.n = 2;
+                    cat = _CATS[_i3];
+                    _context19.p = 1;
+                    _context19.n = 2;
                     return fetch("https://api.github.com/repos/".concat(GH_REPO, "/actions/workflows/").concat(cat.workflow, "/runs?per_page=1"), {
                       headers: headers
                     });
                   case 2:
-                    r = _context16.v;
-                    _context16.n = 3;
+                    r = _context19.v;
+                    _context19.n = 3;
                     return r.json();
                   case 3:
-                    d = _context16.v;
+                    d = _context19.v;
                     run = (_d$workflow_runs = d.workflow_runs) === null || _d$workflow_runs === void 0 ? void 0 : _d$workflow_runs[0];
                     if (run) setGhRuns(function (p) {
                       return _objectSpread(_objectSpread({}, p), {}, _defineProperty({}, cat.id, {
@@ -5829,34 +5991,34 @@ var AutomationPage = function AutomationPage(_ref38) {
                         at: run.updated_at
                       }));
                     });
-                    _context16.n = 5;
+                    _context19.n = 5;
                     break;
                   case 4:
-                    _context16.p = 4;
-                    _t9 = _context16.v;
+                    _context19.p = 4;
+                    _t1 = _context19.v;
                   case 5:
-                    return _context16.a(2);
+                    return _context19.a(2);
                 }
               }, _loop, null, [[1, 4]]);
             });
-            _i2 = 0, _CATS = CATS;
+            _i3 = 0, _CATS = CATS;
           case 2:
-            if (!(_i2 < _CATS.length)) {
-              _context17.n = 4;
+            if (!(_i3 < _CATS.length)) {
+              _context20.n = 4;
               break;
             }
-            return _context17.d(_regeneratorValues(_loop()), 3);
+            return _context20.d(_regeneratorValues(_loop()), 3);
           case 3:
-            _i2++;
-            _context17.n = 2;
+            _i3++;
+            _context20.n = 2;
             break;
           case 4:
-            return _context17.a(2);
+            return _context20.a(2);
         }
-      }, _callee16);
+      }, _callee19);
     }));
     return function fetchGhRuns() {
-      return _ref39.apply(this, arguments);
+      return _ref42.apply(this, arguments);
     };
   }();
 
@@ -5865,10 +6027,10 @@ var AutomationPage = function AutomationPage(_ref38) {
   var API_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   var checkApis = /*#__PURE__*/function () {
-    var _ref40 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee17() {
-      var results, upd, res, r, d, pk, _r, _d3, _t0, _t1, _t10, _t11;
-      return _regenerator().w(function (_context18) {
-        while (1) switch (_context18.p = _context18.n) {
+    var _ref43 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee20() {
+      var results, upd, res, r, d, pk, _r, _d3, _t10, _t11, _t12, _t13;
+      return _regenerator().w(function (_context21) {
+        while (1) switch (_context21.p = _context21.n) {
           case 0:
             setRefreshingApi(true);
             results = {};
@@ -5878,24 +6040,24 @@ var AutomationPage = function AutomationPage(_ref38) {
                 return _objectSpread(_objectSpread({}, p), s);
               });
             }; // Firebase
-            _context18.p = 1;
-            _context18.n = 2;
+            _context21.p = 1;
+            _context21.n = 2;
             return db.collection('news').limit(1).get();
           case 2:
             upd({
               firebase: 'ok'
             });
-            _context18.n = 4;
+            _context21.n = 4;
             break;
           case 3:
-            _context18.p = 3;
-            _t0 = _context18.v;
+            _context21.p = 3;
+            _t10 = _context21.v;
             upd({
               firebase: 'error'
             });
           case 4:
-            _context18.p = 4;
-            _context18.n = 5;
+            _context21.p = 4;
+            _context21.n = 5;
             return Promise.race([puter.ai.chat('ping', {
               model: 'gpt-4o-mini'
             }), new Promise(function (_, rej) {
@@ -5904,36 +6066,36 @@ var AutomationPage = function AutomationPage(_ref38) {
               }, 15000);
             })]);
           case 5:
-            res = _context18.v;
+            res = _context21.v;
             upd({
               gemini: res ? 'ok' : 'error'
             });
-            _context18.n = 7;
+            _context21.n = 7;
             break;
           case 6:
-            _context18.p = 6;
-            _t1 = _context18.v;
+            _context21.p = 6;
+            _t11 = _context21.v;
             upd({
               gemini: 'error'
             });
           case 7:
-            _context18.p = 7;
-            _context18.n = 8;
+            _context21.p = 7;
+            _context21.n = 8;
             return fetch("https://pixabay.com/api/?key=".concat(AI_CFG.pixabayKey, "&q=test&per_page=3"));
           case 8:
-            r = _context18.v;
-            _context18.n = 9;
+            r = _context21.v;
+            _context21.n = 9;
             return r.json();
           case 9:
-            d = _context18.v;
+            d = _context21.v;
             upd({
               pixabay: d.hits ? 'ok' : 'error'
             });
-            _context18.n = 11;
+            _context21.n = 11;
             break;
           case 10:
-            _context18.p = 10;
-            _t10 = _context18.v;
+            _context21.p = 10;
+            _t12 = _context21.v;
             upd({
               pixabay: 'error'
             });
@@ -5941,36 +6103,36 @@ var AutomationPage = function AutomationPage(_ref38) {
             // Pexels
             pk = localStorage.getItem(LS_PEXELS);
             if (pk) {
-              _context18.n = 12;
+              _context21.n = 12;
               break;
             }
             upd({
               pexels: 'nokey'
             });
-            _context18.n = 16;
+            _context21.n = 16;
             break;
           case 12:
-            _context18.p = 12;
-            _context18.n = 13;
+            _context21.p = 12;
+            _context21.n = 13;
             return fetch('https://api.pexels.com/videos/search?query=news&per_page=1', {
               headers: {
                 Authorization: pk
               }
             });
           case 13:
-            _r = _context18.v;
-            _context18.n = 14;
+            _r = _context21.v;
+            _context21.n = 14;
             return _r.json();
           case 14:
-            _d3 = _context18.v;
+            _d3 = _context21.v;
             upd({
               pexels: _d3.videos ? 'ok' : 'error'
             });
-            _context18.n = 16;
+            _context21.n = 16;
             break;
           case 15:
-            _context18.p = 15;
-            _t11 = _context18.v;
+            _context21.p = 15;
+            _t13 = _context21.v;
             upd({
               pexels: 'error'
             });
@@ -5984,12 +6146,12 @@ var AutomationPage = function AutomationPage(_ref38) {
               }));
             } catch (_) {}
           case 17:
-            return _context18.a(2);
+            return _context21.a(2);
         }
-      }, _callee17, null, [[12, 15], [7, 10], [4, 6], [1, 3]]);
+      }, _callee20, null, [[12, 15], [7, 10], [4, 6], [1, 3]]);
     }));
     return function checkApis() {
-      return _ref40.apply(this, arguments);
+      return _ref43.apply(this, arguments);
     };
   }();
   useEffect(function () {
@@ -6015,6 +6177,8 @@ var AutomationPage = function AutomationPage(_ref38) {
     }
     localStorage.setItem(LS_TOKEN, ghToken.trim());
     if (pexelsKey.trim()) localStorage.setItem(LS_PEXELS, pexelsKey.trim());
+    if (cldApiKey.trim()) localStorage.setItem('cld_api_key', cldApiKey.trim());
+    if (cldApiSecret.trim()) localStorage.setItem('cld_api_secret', cldApiSecret.trim());
     setShowSetup(false);
     toast.show('✅ Saved!', 'success');
     fetchGhRuns();
@@ -6023,13 +6187,13 @@ var AutomationPage = function AutomationPage(_ref38) {
 
   // ── Toggle category ──────────────────────────────────────────
   var toggleCat = /*#__PURE__*/function () {
-    var _ref41 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee18(id, cur) {
-      var _t12;
-      return _regenerator().w(function (_context19) {
-        while (1) switch (_context19.p = _context19.n) {
+    var _ref44 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee21(id, cur) {
+      var _t14;
+      return _regenerator().w(function (_context22) {
+        while (1) switch (_context22.p = _context22.n) {
           case 0:
-            _context19.p = 0;
-            _context19.n = 1;
+            _context22.p = 0;
+            _context22.n = 1;
             return db.collection('automation_config').doc(id).set({
               enabled: !cur
             }, {
@@ -6037,43 +6201,43 @@ var AutomationPage = function AutomationPage(_ref38) {
             });
           case 1:
             toast.show(!cur ? '✅ Automation enabled' : '⏸️ Automation paused', 'success');
-            _context19.n = 3;
+            _context22.n = 3;
             break;
           case 2:
-            _context19.p = 2;
-            _t12 = _context19.v;
-            toast.show('Error: ' + _t12.message, 'error');
+            _context22.p = 2;
+            _t14 = _context22.v;
+            toast.show('Error: ' + _t14.message, 'error');
           case 3:
-            return _context19.a(2);
+            return _context22.a(2);
         }
-      }, _callee18, null, [[0, 2]]);
+      }, _callee21, null, [[0, 2]]);
     }));
-    return function toggleCat(_x15, _x16) {
-      return _ref41.apply(this, arguments);
+    return function toggleCat(_x18, _x19) {
+      return _ref44.apply(this, arguments);
     };
   }();
 
   // ── Trigger workflow via GitHub API ─────────────────────────
   var runNow = /*#__PURE__*/function () {
-    var _ref42 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee19(cat) {
-      var tok, r, d, _t13;
-      return _regenerator().w(function (_context20) {
-        while (1) switch (_context20.p = _context20.n) {
+    var _ref45 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee22(cat) {
+      var tok, r, d, _t15;
+      return _regenerator().w(function (_context23) {
+        while (1) switch (_context23.p = _context23.n) {
           case 0:
             tok = localStorage.getItem(LS_TOKEN);
             if (tok) {
-              _context20.n = 1;
+              _context23.n = 1;
               break;
             }
             toast.show('Set GitHub token first', 'error');
             setShowSetup(true);
-            return _context20.a(2);
+            return _context23.a(2);
           case 1:
             setTriggering(function (p) {
               return _objectSpread(_objectSpread({}, p), {}, _defineProperty({}, cat.id, true));
             });
-            _context20.p = 2;
-            _context20.n = 3;
+            _context23.p = 2;
+            _context23.n = 3;
             return fetch("https://api.github.com/repos/".concat(GH_REPO, "/actions/workflows/").concat(cat.workflow, "/dispatches"), {
               method: 'POST',
               headers: {
@@ -6086,65 +6250,65 @@ var AutomationPage = function AutomationPage(_ref38) {
               })
             });
           case 3:
-            r = _context20.v;
+            r = _context23.v;
             if (!(r.status === 204)) {
-              _context20.n = 4;
+              _context23.n = 4;
               break;
             }
             toast.show("\uD83D\uDE80 ".concat(cat.label, " \u2014 triggered!"), 'success');
             setTimeout(fetchGhRuns, 4000);
-            _context20.n = 6;
+            _context23.n = 6;
             break;
           case 4:
-            _context20.n = 5;
+            _context23.n = 5;
             return r.json();
           case 5:
-            d = _context20.v;
+            d = _context23.v;
             toast.show('GitHub error: ' + (d.message || r.status), 'error');
           case 6:
-            _context20.n = 8;
+            _context23.n = 8;
             break;
           case 7:
-            _context20.p = 7;
-            _t13 = _context20.v;
-            toast.show('Trigger failed: ' + _t13.message, 'error');
+            _context23.p = 7;
+            _t15 = _context23.v;
+            toast.show('Trigger failed: ' + _t15.message, 'error');
           case 8:
             setTriggering(function (p) {
               return _objectSpread(_objectSpread({}, p), {}, _defineProperty({}, cat.id, false));
             });
           case 9:
-            return _context20.a(2);
+            return _context23.a(2);
         }
-      }, _callee19, null, [[2, 7]]);
+      }, _callee22, null, [[2, 7]]);
     }));
-    return function runNow(_x17) {
-      return _ref42.apply(this, arguments);
+    return function runNow(_x20) {
+      return _ref45.apply(this, arguments);
     };
   }();
 
   // ── Run ALL categories at once via run-all.yml ───────────────
-  var _useState141 = useState(false),
-    _useState142 = _slicedToArray(_useState141, 2),
-    runningAll = _useState142[0],
-    setRunningAll = _useState142[1];
+  var _useState145 = useState(false),
+    _useState146 = _slicedToArray(_useState145, 2),
+    runningAll = _useState146[0],
+    setRunningAll = _useState146[1];
   var runAll = /*#__PURE__*/function () {
-    var _ref43 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee20() {
-      var tok, r, d, _t14;
-      return _regenerator().w(function (_context21) {
-        while (1) switch (_context21.p = _context21.n) {
+    var _ref46 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee23() {
+      var tok, r, d, _t16;
+      return _regenerator().w(function (_context24) {
+        while (1) switch (_context24.p = _context24.n) {
           case 0:
             tok = localStorage.getItem(LS_TOKEN);
             if (tok) {
-              _context21.n = 1;
+              _context24.n = 1;
               break;
             }
             toast.show('Set GitHub token first', 'error');
             setShowSetup(true);
-            return _context21.a(2);
+            return _context24.a(2);
           case 1:
             setRunningAll(true);
-            _context21.p = 2;
-            _context21.n = 3;
+            _context24.p = 2;
+            _context24.n = 3;
             return fetch("https://api.github.com/repos/".concat(GH_REPO, "/actions/workflows/run-all.yml/dispatches"), {
               method: 'POST',
               headers: {
@@ -6157,37 +6321,37 @@ var AutomationPage = function AutomationPage(_ref38) {
               })
             });
           case 3:
-            r = _context21.v;
+            r = _context24.v;
             if (!(r.status === 204)) {
-              _context21.n = 4;
+              _context24.n = 4;
               break;
             }
             toast.show('🚀 All 5 categories triggered in parallel!', 'success');
             setTimeout(fetchGhRuns, 5000);
-            _context21.n = 6;
+            _context24.n = 6;
             break;
           case 4:
-            _context21.n = 5;
+            _context24.n = 5;
             return r.json();
           case 5:
-            d = _context21.v;
+            d = _context24.v;
             toast.show('GitHub error: ' + (d.message || r.status), 'error');
           case 6:
-            _context21.n = 8;
+            _context24.n = 8;
             break;
           case 7:
-            _context21.p = 7;
-            _t14 = _context21.v;
-            toast.show('Trigger failed: ' + _t14.message, 'error');
+            _context24.p = 7;
+            _t16 = _context24.v;
+            toast.show('Trigger failed: ' + _t16.message, 'error');
           case 8:
             setRunningAll(false);
           case 9:
-            return _context21.a(2);
+            return _context24.a(2);
         }
-      }, _callee20, null, [[2, 7]]);
+      }, _callee23, null, [[2, 7]]);
     }));
     return function runAll() {
-      return _ref43.apply(this, arguments);
+      return _ref46.apply(this, arguments);
     };
   }();
 
@@ -6531,6 +6695,27 @@ var AutomationPage = function AutomationPage(_ref38) {
     style: {
       fontSize: 12
     }
+  }), /*#__PURE__*/React.createElement("input", {
+    className: "inp",
+    value: cldApiKey,
+    onChange: function onChange(e) {
+      return setCldApiKey(e.target.value);
+    },
+    placeholder: "Cloudinary API Key (for full delete from Cloudinary)",
+    style: {
+      fontSize: 12
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    className: "inp",
+    type: "password",
+    value: cldApiSecret,
+    onChange: function onChange(e) {
+      return setCldApiSecret(e.target.value);
+    },
+    placeholder: "Cloudinary API Secret",
+    style: {
+      fontSize: 12
+    }
   }), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-accent",
     style: {
@@ -6538,7 +6723,7 @@ var AutomationPage = function AutomationPage(_ref38) {
       fontWeight: 700
     },
     onClick: saveSetup
-  }, "\uD83D\uDCBE Save Token"))), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCBE Save Credentials"))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -6561,10 +6746,10 @@ var AutomationPage = function AutomationPage(_ref38) {
     key: 'pexels',
     label: 'Pexels',
     icon: '🎬'
-  }].map(function (_ref44) {
-    var key = _ref44.key,
-      label = _ref44.label,
-      icon = _ref44.icon;
+  }].map(function (_ref47) {
+    var key = _ref47.key,
+      label = _ref47.label,
+      icon = _ref47.icon;
     var s = apiStatus[key] || 'checking';
     var ok = s === 'ok';
     var err = s === 'error';
@@ -6950,33 +7135,33 @@ var AutomationPage = function AutomationPage(_ref38) {
       return e.currentTarget.style.color = 'var(--muted)';
     }
   }, showAllLogs ? '▲ Show Less' : "\u25BC View All (".concat(logs.length, " entries)")))), function () {
-    var _useState143 = useState(false),
-      _useState144 = _slicedToArray(_useState143, 2),
-      fixing = _useState144[0],
-      setFixing = _useState144[1];
+    var _useState147 = useState(false),
+      _useState148 = _slicedToArray(_useState147, 2),
+      fixing = _useState148[0],
+      setFixing = _useState148[1];
     var publishAll = /*#__PURE__*/function () {
-      var _ref45 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee21() {
-        var all, docs, _loop2, i, _t15;
-        return _regenerator().w(function (_context23) {
-          while (1) switch (_context23.p = _context23.n) {
+      var _ref48 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee24() {
+        var all, docs, _loop2, i, _t17;
+        return _regenerator().w(function (_context26) {
+          while (1) switch (_context26.p = _context26.n) {
             case 0:
               if (confirm('This will set published:true and hidden:false on ALL news articles. Continue?')) {
-                _context23.n = 1;
+                _context26.n = 1;
                 break;
               }
-              return _context23.a(2);
+              return _context26.a(2);
             case 1:
               setFixing(true);
-              _context23.p = 2;
-              _context23.n = 3;
+              _context26.p = 2;
+              _context26.n = 3;
               return db.collection('news').get();
             case 3:
-              all = _context23.v;
+              all = _context26.v;
               docs = all.docs; // Batch update all in groups of 400
               _loop2 = /*#__PURE__*/_regenerator().m(function _loop2() {
                 var batch;
-                return _regenerator().w(function (_context22) {
-                  while (1) switch (_context22.n) {
+                return _regenerator().w(function (_context25) {
+                  while (1) switch (_context25.n) {
                     case 0:
                       batch = db.batch();
                       docs.slice(i, i + 400).forEach(function (d) {
@@ -6986,41 +7171,41 @@ var AutomationPage = function AutomationPage(_ref38) {
                           status: 'published'
                         });
                       });
-                      _context22.n = 1;
+                      _context25.n = 1;
                       return batch.commit();
                     case 1:
-                      return _context22.a(2);
+                      return _context25.a(2);
                   }
                 }, _loop2);
               });
               i = 0;
             case 4:
               if (!(i < docs.length)) {
-                _context23.n = 6;
+                _context26.n = 6;
                 break;
               }
-              return _context23.d(_regeneratorValues(_loop2()), 5);
+              return _context26.d(_regeneratorValues(_loop2()), 5);
             case 5:
               i += 400;
-              _context23.n = 4;
+              _context26.n = 4;
               break;
             case 6:
               toast.show("\u2705 Published all ".concat(docs.length, " articles!"), 'success');
-              _context23.n = 8;
+              _context26.n = 8;
               break;
             case 7:
-              _context23.p = 7;
-              _t15 = _context23.v;
-              toast.show('Error: ' + _t15.message, 'error');
+              _context26.p = 7;
+              _t17 = _context26.v;
+              toast.show('Error: ' + _t17.message, 'error');
             case 8:
               setFixing(false);
             case 9:
-              return _context23.a(2);
+              return _context26.a(2);
           }
-        }, _callee21, null, [[2, 7]]);
+        }, _callee24, null, [[2, 7]]);
       }));
       return function publishAll() {
-        return _ref45.apply(this, arguments);
+        return _ref48.apply(this, arguments);
       };
     }();
     return /*#__PURE__*/React.createElement("div", {
@@ -7076,19 +7261,19 @@ var AutomationPage = function AutomationPage(_ref38) {
       }
     }), " Publishing\u2026") : '📢 Publish All'));
   }(), function () {
-    var _useState145 = useState(null),
-      _useState146 = _slicedToArray(_useState145, 2),
-      dbStatus = _useState146[0],
-      setDbStatus = _useState146[1];
-    var _useState147 = useState(false),
-      _useState148 = _slicedToArray(_useState147, 2),
-      testing = _useState148[0],
-      setTesting = _useState148[1];
+    var _useState149 = useState(null),
+      _useState150 = _slicedToArray(_useState149, 2),
+      dbStatus = _useState150[0],
+      setDbStatus = _useState150[1];
+    var _useState151 = useState(false),
+      _useState152 = _slicedToArray(_useState151, 2),
+      testing = _useState152[0],
+      setTesting = _useState152[1];
     var testDb = /*#__PURE__*/function () {
-      var _ref46 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee22() {
-        var results, tests, _i3, _tests, t, s, _e$message, _e$message2, indexUrl, _t16;
-        return _regenerator().w(function (_context24) {
-          while (1) switch (_context24.p = _context24.n) {
+      var _ref49 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee25() {
+        var results, tests, _i4, _tests, t, s, _e$message, _e$message2, indexUrl, _t18;
+        return _regenerator().w(function (_context27) {
+          while (1) switch (_context27.p = _context27.n) {
             case 0:
               setTesting(true);
               results = [];
@@ -7118,51 +7303,51 @@ var AutomationPage = function AutomationPage(_ref38) {
                   return db.collection('news').where('category', '==', 'world').orderBy('timestamp', 'desc').limit(3).get();
                 }
               }];
-              _i3 = 0, _tests = tests;
+              _i4 = 0, _tests = tests;
             case 1:
-              if (!(_i3 < _tests.length)) {
-                _context24.n = 6;
+              if (!(_i4 < _tests.length)) {
+                _context27.n = 6;
                 break;
               }
-              t = _tests[_i3];
-              _context24.p = 2;
-              _context24.n = 3;
+              t = _tests[_i4];
+              _context27.p = 2;
+              _context27.n = 3;
               return t.fn();
             case 3:
-              s = _context24.v;
+              s = _context27.v;
               results.push({
                 name: t.name,
                 ok: true,
                 count: s.size,
                 err: null
               });
-              _context24.n = 5;
+              _context27.n = 5;
               break;
             case 4:
-              _context24.p = 4;
-              _t16 = _context24.v;
-              indexUrl = ((_e$message = _t16.message) === null || _e$message === void 0 || (_e$message = _e$message.match(/https:\/\/console\.firebase[^\s]*/)) === null || _e$message === void 0 ? void 0 : _e$message[0]) || null;
+              _context27.p = 4;
+              _t18 = _context27.v;
+              indexUrl = ((_e$message = _t18.message) === null || _e$message === void 0 || (_e$message = _e$message.match(/https:\/\/console\.firebase[^\s]*/)) === null || _e$message === void 0 ? void 0 : _e$message[0]) || null;
               results.push({
                 name: t.name,
                 ok: false,
                 count: 0,
-                err: (_e$message2 = _t16.message) === null || _e$message2 === void 0 ? void 0 : _e$message2.slice(0, 120),
+                err: (_e$message2 = _t18.message) === null || _e$message2 === void 0 ? void 0 : _e$message2.slice(0, 120),
                 indexUrl: indexUrl
               });
             case 5:
-              _i3++;
-              _context24.n = 1;
+              _i4++;
+              _context27.n = 1;
               break;
             case 6:
               setDbStatus(results);
               setTesting(false);
             case 7:
-              return _context24.a(2);
+              return _context27.a(2);
           }
-        }, _callee22, null, [[2, 4]]);
+        }, _callee25, null, [[2, 4]]);
       }));
       return function testDb() {
-        return _ref46.apply(this, arguments);
+        return _ref49.apply(this, arguments);
       };
     }();
     return /*#__PURE__*/React.createElement("div", {
@@ -7381,9 +7566,9 @@ var AutomationPage = function AutomationPage(_ref38) {
 };
 
 // ── SETTINGS ──────────────────────────────────────────────────
-var SettingsPage = function SettingsPage(_ref47) {
-  var user = _ref47.user,
-    toast = _ref47.toast;
+var SettingsPage = function SettingsPage(_ref50) {
+  var user = _ref50.user,
+    toast = _ref50.toast;
   return /*#__PURE__*/React.createElement("div", {
     className: "fade-up"
   }, /*#__PURE__*/React.createElement("div", {
@@ -7485,10 +7670,10 @@ var SettingsPage = function SettingsPage(_ref47) {
       gap: 10,
       marginTop: 14
     }
-  }, [['Project', 'KWT News'], ['Firebase', 'kwt-news'], ['Version', '2.0.0'], ['Build', '2026']].map(function (_ref48) {
-    var _ref49 = _slicedToArray(_ref48, 2),
-      k = _ref49[0],
-      v = _ref49[1];
+  }, [['Project', 'KWT News'], ['Firebase', 'kwt-news'], ['Version', '2.0.0'], ['Build', '2026']].map(function (_ref51) {
+    var _ref52 = _slicedToArray(_ref51, 2),
+      k = _ref52[0],
+      v = _ref52[1];
     return /*#__PURE__*/React.createElement("div", {
       key: k,
       style: {
@@ -7513,55 +7698,55 @@ var SettingsPage = function SettingsPage(_ref47) {
 };
 
 // ── LOGOS MANAGER ────────────────────────────────────────────
-var LogosManager = function LogosManager(_ref50) {
-  var toast = _ref50.toast;
-  var _useState149 = useState([]),
-    _useState150 = _slicedToArray(_useState149, 2),
-    logos = _useState150[0],
-    setLogos = _useState150[1];
-  var _useState151 = useState(true),
-    _useState152 = _slicedToArray(_useState151, 2),
-    loading = _useState152[0],
-    setLoading = _useState152[1];
-  var _useState153 = useState({
+var LogosManager = function LogosManager(_ref53) {
+  var toast = _ref53.toast;
+  var _useState153 = useState([]),
+    _useState154 = _slicedToArray(_useState153, 2),
+    logos = _useState154[0],
+    setLogos = _useState154[1];
+  var _useState155 = useState(true),
+    _useState156 = _slicedToArray(_useState155, 2),
+    loading = _useState156[0],
+    setLoading = _useState156[1];
+  var _useState157 = useState({
       name: '',
       url: ''
     }),
-    _useState154 = _slicedToArray(_useState153, 2),
-    form = _useState154[0],
-    setForm = _useState154[1];
-  var _useState155 = useState(false),
-    _useState156 = _slicedToArray(_useState155, 2),
-    saving = _useState156[0],
-    setSaving = _useState156[1];
-  var _useState157 = useState(''),
     _useState158 = _slicedToArray(_useState157, 2),
-    preview = _useState158[0],
-    setPreview = _useState158[1];
-  var _useState159 = useState(''),
+    form = _useState158[0],
+    setForm = _useState158[1];
+  var _useState159 = useState(false),
     _useState160 = _slicedToArray(_useState159, 2),
-    domainInput = _useState160[0],
-    setDomainInput = _useState160[1];
-  var _useState161 = useState('domain'),
+    saving = _useState160[0],
+    setSaving = _useState160[1];
+  var _useState161 = useState(''),
     _useState162 = _slicedToArray(_useState161, 2),
-    tab = _useState162[0],
-    setTab = _useState162[1]; // 'domain'|'pixabay'|'url'|'phone'
+    preview = _useState162[0],
+    setPreview = _useState162[1];
   var _useState163 = useState(''),
     _useState164 = _slicedToArray(_useState163, 2),
-    galleryQ = _useState164[0],
-    setGalleryQ = _useState164[1];
-  var _useState165 = useState([]),
+    domainInput = _useState164[0],
+    setDomainInput = _useState164[1];
+  var _useState165 = useState('domain'),
     _useState166 = _slicedToArray(_useState165, 2),
-    gallery = _useState166[0],
-    setGallery = _useState166[1];
-  var _useState167 = useState(false),
+    tab = _useState166[0],
+    setTab = _useState166[1]; // 'domain'|'pixabay'|'url'|'phone'
+  var _useState167 = useState(''),
     _useState168 = _slicedToArray(_useState167, 2),
-    searching = _useState168[0],
-    setSearching = _useState168[1];
-  var _useState169 = useState(false),
+    galleryQ = _useState168[0],
+    setGalleryQ = _useState168[1];
+  var _useState169 = useState([]),
     _useState170 = _slicedToArray(_useState169, 2),
-    phoneUploading = _useState170[0],
-    setPhoneUploading = _useState170[1];
+    gallery = _useState170[0],
+    setGallery = _useState170[1];
+  var _useState171 = useState(false),
+    _useState172 = _slicedToArray(_useState171, 2),
+    searching = _useState172[0],
+    setSearching = _useState172[1];
+  var _useState173 = useState(false),
+    _useState174 = _slicedToArray(_useState173, 2),
+    phoneUploading = _useState174[0],
+    setPhoneUploading = _useState174[1];
   var phoneInputRef = useRef(null);
   useEffect(function () {
     // Logos change rarely — one-time get() avoids a persistent WebSocket listener
@@ -7597,45 +7782,45 @@ var LogosManager = function LogosManager(_ref50) {
 
   // ── Pixabay gallery search ──────────────────────────────────
   var searchGallery = /*#__PURE__*/function () {
-    var _ref51 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee23() {
-      var _d$hits, r, d, _t17;
-      return _regenerator().w(function (_context25) {
-        while (1) switch (_context25.p = _context25.n) {
+    var _ref54 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee26() {
+      var _d$hits, r, d, _t19;
+      return _regenerator().w(function (_context28) {
+        while (1) switch (_context28.p = _context28.n) {
           case 0:
             if (galleryQ.trim()) {
-              _context25.n = 1;
+              _context28.n = 1;
               break;
             }
             toast.show('Enter search term', 'error');
-            return _context25.a(2);
+            return _context28.a(2);
           case 1:
             setSearching(true);
-            _context25.p = 2;
-            _context25.n = 3;
+            _context28.p = 2;
+            _context28.n = 3;
             return fetch("https://pixabay.com/api/?key=".concat(AI_CFG.pixabayKey, "&q=").concat(encodeURIComponent(galleryQ), "&image_type=vector&safesearch=true&per_page=18&min_width=80"));
           case 3:
-            r = _context25.v;
-            _context25.n = 4;
+            r = _context28.v;
+            _context28.n = 4;
             return r.json();
           case 4:
-            d = _context25.v;
+            d = _context28.v;
             setGallery(d.hits || []);
             if (!((_d$hits = d.hits) !== null && _d$hits !== void 0 && _d$hits.length)) toast.show('No images found — try different keywords', 'error');
-            _context25.n = 6;
+            _context28.n = 6;
             break;
           case 5:
-            _context25.p = 5;
-            _t17 = _context25.v;
-            toast.show('Search error: ' + _t17.message, 'error');
+            _context28.p = 5;
+            _t19 = _context28.v;
+            toast.show('Search error: ' + _t19.message, 'error');
           case 6:
             setSearching(false);
           case 7:
-            return _context25.a(2);
+            return _context28.a(2);
         }
-      }, _callee23, null, [[2, 5]]);
+      }, _callee26, null, [[2, 5]]);
     }));
     return function searchGallery() {
-      return _ref51.apply(this, arguments);
+      return _ref54.apply(this, arguments);
     };
   }();
   var pickImage = function pickImage(url) {
@@ -7650,41 +7835,41 @@ var LogosManager = function LogosManager(_ref50) {
 
   // ── Phone gallery upload to Cloudinary ──────────────────────
   var handlePhoneFile = /*#__PURE__*/function () {
-    var _ref52 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee24(e) {
+    var _ref55 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee27(e) {
       var _e$target$files;
-      var file, localUrl, fd, res, data, cloudUrl, _t18;
-      return _regenerator().w(function (_context26) {
-        while (1) switch (_context26.p = _context26.n) {
+      var file, localUrl, fd, res, data, cloudUrl, _t20;
+      return _regenerator().w(function (_context29) {
+        while (1) switch (_context29.p = _context29.n) {
           case 0:
             file = (_e$target$files = e.target.files) === null || _e$target$files === void 0 ? void 0 : _e$target$files[0];
             if (file) {
-              _context26.n = 1;
+              _context29.n = 1;
               break;
             }
-            return _context26.a(2);
+            return _context29.a(2);
           case 1:
             // Show local preview immediately
             localUrl = URL.createObjectURL(file);
             setPreview(localUrl);
             setPhoneUploading(true);
-            _context26.p = 2;
+            _context29.p = 2;
             fd = new FormData();
             fd.append('file', file);
             fd.append('upload_preset', CLOUDINARY.uploadPreset);
             fd.append('folder', 'logos');
-            _context26.n = 3;
+            _context29.n = 3;
             return fetch("https://api.cloudinary.com/v1_1/".concat(CLOUDINARY.cloudName, "/image/upload"), {
               method: 'POST',
               body: fd
             });
           case 3:
-            res = _context26.v;
-            _context26.n = 4;
+            res = _context29.v;
+            _context29.n = 4;
             return res.json();
           case 4:
-            data = _context26.v;
+            data = _context29.v;
             if (!data.error) {
-              _context26.n = 5;
+              _context29.n = 5;
               break;
             }
             throw new Error(data.error.message);
@@ -7697,49 +7882,49 @@ var LogosManager = function LogosManager(_ref50) {
             });
             setPreview(cloudUrl);
             toast.show('✅ Image uploaded — enter name and save', 'success');
-            _context26.n = 7;
+            _context29.n = 7;
             break;
           case 6:
-            _context26.p = 6;
-            _t18 = _context26.v;
-            toast.show('Upload failed: ' + _t18.message, 'error');
+            _context29.p = 6;
+            _t20 = _context29.v;
+            toast.show('Upload failed: ' + _t20.message, 'error');
           case 7:
             setPhoneUploading(false);
             // Reset file input so same file can be re-selected
             if (phoneInputRef.current) phoneInputRef.current.value = '';
           case 8:
-            return _context26.a(2);
+            return _context29.a(2);
         }
-      }, _callee24, null, [[2, 6]]);
+      }, _callee27, null, [[2, 6]]);
     }));
-    return function handlePhoneFile(_x18) {
-      return _ref52.apply(this, arguments);
+    return function handlePhoneFile(_x21) {
+      return _ref55.apply(this, arguments);
     };
   }();
   var add = /*#__PURE__*/function () {
-    var _ref53 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee25() {
-      var name, url, _t19;
-      return _regenerator().w(function (_context27) {
-        while (1) switch (_context27.p = _context27.n) {
+    var _ref56 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee28() {
+      var name, url, _t21;
+      return _regenerator().w(function (_context30) {
+        while (1) switch (_context30.p = _context30.n) {
           case 0:
             name = form.name.trim(), url = form.url.trim();
             if (!(!name || !url)) {
-              _context27.n = 1;
+              _context30.n = 1;
               break;
             }
             toast.show('Both name and URL required', 'error');
-            return _context27.a(2);
+            return _context30.a(2);
           case 1:
             if (url.startsWith('http')) {
-              _context27.n = 2;
+              _context30.n = 2;
               break;
             }
             toast.show('URL must start with http', 'error');
-            return _context27.a(2);
+            return _context30.a(2);
           case 2:
             setSaving(true);
-            _context27.p = 3;
-            _context27.n = 4;
+            _context30.p = 3;
+            _context30.n = 4;
             return db.collection('logos').add({
               name: name,
               url: url,
@@ -7753,53 +7938,53 @@ var LogosManager = function LogosManager(_ref50) {
             setPreview('');
             setDomainInput('');
             toast.show('✅ Logo added!', 'success');
-            _context27.n = 6;
+            _context30.n = 6;
             break;
           case 5:
-            _context27.p = 5;
-            _t19 = _context27.v;
-            toast.show('Error: ' + _t19.message, 'error');
+            _context30.p = 5;
+            _t21 = _context30.v;
+            toast.show('Error: ' + _t21.message, 'error');
           case 6:
             setSaving(false);
           case 7:
-            return _context27.a(2);
+            return _context30.a(2);
         }
-      }, _callee25, null, [[3, 5]]);
+      }, _callee28, null, [[3, 5]]);
     }));
     return function add() {
-      return _ref53.apply(this, arguments);
+      return _ref56.apply(this, arguments);
     };
   }();
   var del = /*#__PURE__*/function () {
-    var _ref54 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee26(id, name) {
-      var _t20;
-      return _regenerator().w(function (_context28) {
-        while (1) switch (_context28.p = _context28.n) {
+    var _ref57 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee29(id, name) {
+      var _t22;
+      return _regenerator().w(function (_context31) {
+        while (1) switch (_context31.p = _context31.n) {
           case 0:
             if (confirm("Delete logo for \"".concat(name, "\"?"))) {
-              _context28.n = 1;
+              _context31.n = 1;
               break;
             }
-            return _context28.a(2);
+            return _context31.a(2);
           case 1:
-            _context28.p = 1;
-            _context28.n = 2;
+            _context31.p = 1;
+            _context31.n = 2;
             return db.collection('logos').doc(id)["delete"]();
           case 2:
             toast.show('Deleted', 'success');
-            _context28.n = 4;
+            _context31.n = 4;
             break;
           case 3:
-            _context28.p = 3;
-            _t20 = _context28.v;
-            toast.show('Error: ' + _t20.message, 'error');
+            _context31.p = 3;
+            _t22 = _context31.v;
+            toast.show('Error: ' + _t22.message, 'error');
           case 4:
-            return _context28.a(2);
+            return _context31.a(2);
         }
-      }, _callee26, null, [[1, 3]]);
+      }, _callee29, null, [[1, 3]]);
     }));
-    return function del(_x19, _x20) {
-      return _ref54.apply(this, arguments);
+    return function del(_x22, _x23) {
+      return _ref57.apply(this, arguments);
     };
   }();
   var TAB_BTN = function TAB_BTN(id, label) {
@@ -8359,17 +8544,17 @@ var LogosManager = function LogosManager(_ref50) {
 };
 
 // ── CATEGORY MANAGER ─────────────────────────────────────────
-var CategoryManager = function CategoryManager(_ref55) {
-  var toast = _ref55.toast,
-    onNavigate = _ref55.onNavigate;
-  var _useState171 = useState({}),
-    _useState172 = _slicedToArray(_useState171, 2),
-    counts = _useState172[0],
-    setCounts = _useState172[1];
-  var _useState173 = useState(true),
-    _useState174 = _slicedToArray(_useState173, 2),
-    loading = _useState174[0],
-    setLoading = _useState174[1];
+var CategoryManager = function CategoryManager(_ref58) {
+  var toast = _ref58.toast,
+    onNavigate = _ref58.onNavigate;
+  var _useState175 = useState({}),
+    _useState176 = _slicedToArray(_useState175, 2),
+    counts = _useState176[0],
+    setCounts = _useState176[1];
+  var _useState177 = useState(true),
+    _useState178 = _slicedToArray(_useState177, 2),
+    loading = _useState178[0],
+    setLoading = _useState178[1];
   useEffect(function () {
     var u = db.collection('news').onSnapshot(function (s) {
       var c = {};
@@ -8835,8 +9020,8 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── CATEGORY BADGE (appears at 0.3s) ──────────────────
         if (sec > 0.3) {
-          var _t21 = easeOut((sec - 0.3) / 0.4);
-          ctx.globalAlpha = _t21;
+          var _t23 = easeOut((sec - 0.3) / 0.4);
+          ctx.globalAlpha = _t23;
           ctx.fillStyle = accent;
           ctx.beginPath();
           ctx.roundRect(22, 80, 200, 30, 6);
@@ -8858,7 +9043,7 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── HEADLINE (slides from left at 0.6s) ───────────────
         if (sec > 0.6) {
-          var _t22 = easeOut((sec - 0.6) / 0.6);
+          var _t24 = easeOut((sec - 0.6) / 0.6);
           ctx.save();
           ctx.beginPath();
           ctx.rect(0, 115, W * 0.54 + 30, H - 115 - 48);
@@ -8887,16 +9072,16 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── ACCENT LINE LEFT (animates at 1.2s) ───────────────
         if (sec > 1.2) {
-          var _t23 = easeOut((sec - 1.2) / 0.4);
-          var lineH = lerp(0, Math.min(titleLines.length * 64 + 10, H - 250), _t23);
+          var _t25 = easeOut((sec - 1.2) / 0.4);
+          var lineH = lerp(0, Math.min(titleLines.length * 64 + 10, H - 250), _t25);
           ctx.fillStyle = accent;
           ctx.fillRect(8, 165 - 40, 4, lineH);
         }
 
         // ─── SUMMARY (fades in at 4.5s) ────────────────────────
         if (sec > 4.2 && summary) {
-          var _t24 = easeOut((sec - 4.2) / 0.8);
-          ctx.globalAlpha = _t24;
+          var _t26 = easeOut((sec - 4.2) / 0.8);
+          ctx.globalAlpha = _t26;
           // Subtle separator
           ctx.fillStyle = 'rgba(255,255,255,0.12)';
           ctx.fillRect(22, titleLines.length * 64 + 165 - 20, W * 0.52 - 44, 1);
@@ -8911,8 +9096,8 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── LOWER-THIRD (slides up at 3s) ─────────────────────
         if (sec > 2.8) {
-          var _t25 = easeOut((sec - 2.8) / 0.5);
-          var ltY = lerp(H, H - 170, _t25);
+          var _t27 = easeOut((sec - 2.8) / 0.5);
+          var ltY = lerp(H, H - 170, _t27);
           ctx.fillStyle = 'rgba(5,12,24,0.94)';
           ctx.fillRect(0, ltY, W * 0.54, 90);
           ctx.fillStyle = accent;
@@ -9008,7 +9193,7 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
 // ── Voice + Multi-Image Documentary News Video ───────────────
 var makeNewsVideoWithVoice = /*#__PURE__*/function () {
-  var _ref56 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee27(article) {
+  var _ref59 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee30(article) {
     var durSecs,
       script,
       audioEl,
@@ -9018,7 +9203,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
       ttsUrls,
       _loop3,
       _ret,
-      _i4,
+      _i5,
       _ttsUrls,
       seenUrls,
       allUrls,
@@ -9028,26 +9213,26 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
       bgImgs,
       logoImg,
       imgs,
-      _args30 = arguments,
-      _t29;
-    return _regenerator().w(function (_context30) {
-      while (1) switch (_context30.p = _context30.n) {
+      _args33 = arguments,
+      _t31;
+    return _regenerator().w(function (_context33) {
+      while (1) switch (_context33.p = _context33.n) {
         case 0:
-          durSecs = _args30.length > 1 && _args30[1] !== undefined ? _args30[1] : 28;
+          durSecs = _args33.length > 1 && _args33[1] !== undefined ? _args33[1] : 28;
           script = (article.isBreaking ? 'Breaking news! ' : '') + article.title + '. ' + (article.summary || '');
           audioEl = null, audioStream = null, audioBlobUrl = null; // ── TTS audio — HTMLAudioElement.captureStream() approach ────
           // More reliable than AudioContext: browser handles format decoding internally
-          _context30.p = 1;
+          _context33.p = 1;
           ttsText = script.slice(0, 500); // Try multiple TTS endpoints for reliability
           ttsUrls = ['https://text.pollinations.ai/' + encodeURIComponent(ttsText) + '?model=openai-audio&voice=alloy&seed=1', 'https://text.pollinations.ai/' + encodeURIComponent(ttsText) + '?model=openai-audio&voice=nova&seed=42'];
           _loop3 = /*#__PURE__*/_regenerator().m(function _loop3() {
-            var ttsUrl, resp, buf, testEl, canPlay, audioDur, capStream, _t26;
-            return _regenerator().w(function (_context29) {
-              while (1) switch (_context29.p = _context29.n) {
+            var ttsUrl, resp, buf, testEl, canPlay, audioDur, capStream, _t28;
+            return _regenerator().w(function (_context32) {
+              while (1) switch (_context32.p = _context32.n) {
                 case 0:
-                  ttsUrl = _ttsUrls[_i4];
-                  _context29.p = 1;
-                  _context29.n = 2;
+                  ttsUrl = _ttsUrls[_i5];
+                  _context32.p = 1;
+                  _context32.n = 2;
                   return Promise.race([fetch(ttsUrl, {
                     headers: {
                       'Accept': 'audio/mpeg,audio/*'
@@ -9058,29 +9243,29 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
                     }, 20000);
                   })]);
                 case 2:
-                  resp = _context29.v;
+                  resp = _context32.v;
                   if (resp.ok) {
-                    _context29.n = 3;
+                    _context32.n = 3;
                     break;
                   }
-                  return _context29.a(2, 0);
+                  return _context32.a(2, 0);
                 case 3:
-                  _context29.n = 4;
+                  _context32.n = 4;
                   return resp.arrayBuffer();
                 case 4:
-                  buf = _context29.v;
+                  buf = _context32.v;
                   if (!(buf.byteLength < 2000)) {
-                    _context29.n = 5;
+                    _context32.n = 5;
                     break;
                   }
-                  return _context29.a(2, 0);
+                  return _context32.a(2, 0);
                 case 5:
                   // Test if audio can be decoded using a temporary Audio element
                   audioBlobUrl = URL.createObjectURL(new Blob([buf], {
                     type: 'audio/mpeg'
                   }));
                   testEl = new Audio(audioBlobUrl);
-                  _context29.n = 6;
+                  _context32.n = 6;
                   return new Promise(function (res) {
                     testEl.oncanplaythrough = function () {
                       return res(true);
@@ -9094,14 +9279,14 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
                     }, 5000);
                   });
                 case 6:
-                  canPlay = _context29.v;
+                  canPlay = _context32.v;
                   if (canPlay) {
-                    _context29.n = 7;
+                    _context32.n = 7;
                     break;
                   }
                   URL.revokeObjectURL(audioBlobUrl);
                   audioBlobUrl = null;
-                  return _context29.a(2, 0);
+                  return _context32.a(2, 0);
                 case 7:
                   audioDur = testEl.duration || 0;
                   if (audioDur > 0.5) durSecs = Math.max(durSecs, Math.ceil(audioDur) + 4);
@@ -9110,59 +9295,59 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
                   audioEl.crossOrigin = 'anonymous';
                   capStream = audioEl.captureStream ? audioEl.captureStream() : audioEl.mozCaptureStream ? audioEl.mozCaptureStream() : null;
                   if (!(capStream && capStream.getAudioTracks().length > 0)) {
-                    _context29.n = 8;
+                    _context32.n = 8;
                     break;
                   }
                   audioStream = {
                     element: audioEl,
                     stream: capStream
                   };
-                  return _context29.a(2, 1);
+                  return _context32.a(2, 1);
                 case 8:
-                  _context29.n = 10;
+                  _context32.n = 10;
                   break;
                 case 9:
-                  _context29.p = 9;
-                  _t26 = _context29.v;
+                  _context32.p = 9;
+                  _t28 = _context32.v;
                   if (audioBlobUrl) {
                     URL.revokeObjectURL(audioBlobUrl);
                     audioBlobUrl = null;
                   }
                 case 10:
-                  return _context29.a(2);
+                  return _context32.a(2);
               }
             }, _loop3, null, [[1, 9]]);
           });
-          _i4 = 0, _ttsUrls = ttsUrls;
+          _i5 = 0, _ttsUrls = ttsUrls;
         case 2:
-          if (!(_i4 < _ttsUrls.length)) {
-            _context30.n = 6;
+          if (!(_i5 < _ttsUrls.length)) {
+            _context33.n = 6;
             break;
           }
-          return _context30.d(_regeneratorValues(_loop3()), 3);
+          return _context33.d(_regeneratorValues(_loop3()), 3);
         case 3:
-          _ret = _context30.v;
+          _ret = _context33.v;
           if (!(_ret === 0)) {
-            _context30.n = 4;
+            _context33.n = 4;
             break;
           }
-          return _context30.a(3, 5);
+          return _context33.a(3, 5);
         case 4:
           if (!(_ret === 1)) {
-            _context30.n = 5;
+            _context33.n = 5;
             break;
           }
-          return _context30.a(3, 6);
+          return _context33.a(3, 6);
         case 5:
-          _i4++;
-          _context30.n = 2;
+          _i5++;
+          _context33.n = 2;
           break;
         case 6:
-          _context30.n = 8;
+          _context33.n = 8;
           break;
         case 7:
-          _context30.p = 7;
-          _t29 = _context30.v;
+          _context33.p = 7;
+          _t31 = _context33.v;
         case 8:
           // ── Preload all images (deduplicated) ─────────────────────────
           seenUrls = new Set();
@@ -9184,15 +9369,15 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
               i.src = src;
             });
           };
-          _context30.n = 9;
+          _context33.n = 9;
           return Promise.all([Promise.all(allUrls.map(loadImg)), article.sourceLogo ? loadImg(article.sourceLogo) : Promise.resolve(null)]);
         case 9:
-          _yield$Promise$all = _context30.v;
+          _yield$Promise$all = _context33.v;
           _yield$Promise$all2 = _slicedToArray(_yield$Promise$all, 2);
           bgImgs = _yield$Promise$all2[0];
           logoImg = _yield$Promise$all2[1];
           imgs = bgImgs.filter(Boolean); // ── Canvas render ─────────────────────────────────────────────
-          return _context30.a(2, new Promise(function (resolve, reject) {
+          return _context33.a(2, new Promise(function (resolve, reject) {
             var W = 1280,
               H = 720;
             var cv = document.createElement('canvas');
@@ -9477,8 +9662,8 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
 
               // Summary text (documentary info panel)
               if (sec > 3.5 && summary) {
-                var _t27 = easeOut((sec - 3.5) / 0.9);
-                ctx.globalAlpha = _t27 * 0.9;
+                var _t29 = easeOut((sec - 3.5) / 0.9);
+                ctx.globalAlpha = _t29 * 0.9;
                 // Subtle separator line
                 var sepG = ctx.createLinearGradient(22, 0, W * 0.52 - 20, 0);
                 sepG.addColorStop(0, accent);
@@ -9546,8 +9731,8 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
 
               // Lower third — source + branding
               if (sec > 2.5) {
-                var _t28 = easeOut((sec - 2.5) / 0.6),
-                  ltY = lerp(H + 50, H - 175, _t28);
+                var _t30 = easeOut((sec - 2.5) / 0.6),
+                  ltY = lerp(H + 50, H - 175, _t30);
                 // Panel background with gradient
                 var ltGrad = ctx.createLinearGradient(0, ltY, W * 0.56, ltY);
                 ltGrad.addColorStop(0, 'rgba(3,8,18,0.97)');
@@ -9621,10 +9806,10 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
             requestAnimationFrame(_frame2);
           }));
       }
-    }, _callee27, null, [[1, 7]]);
+    }, _callee30, null, [[1, 7]]);
   }));
-  return function makeNewsVideoWithVoice(_x21) {
-    return _ref56.apply(this, arguments);
+  return function makeNewsVideoWithVoice(_x24) {
+    return _ref59.apply(this, arguments);
   };
 }();
 
@@ -9649,8 +9834,8 @@ var SOURCE_DOMAINS = {
 };
 var guessSourceDomain = function guessSourceDomain(name) {
   var lower = name.toLowerCase().replace(/[^a-z]/g, ' ');
-  for (var _i5 = 0, _Object$entries = Object.entries(SOURCE_DOMAINS); _i5 < _Object$entries.length; _i5++) {
-    var _Object$entries$_i = _slicedToArray(_Object$entries[_i5], 2),
+  for (var _i6 = 0, _Object$entries = Object.entries(SOURCE_DOMAINS); _i6 < _Object$entries.length; _i6++) {
+    var _Object$entries$_i = _slicedToArray(_Object$entries[_i6], 2),
       k = _Object$entries$_i[0],
       v = _Object$entries$_i[1];
     if (lower.includes(k)) return v;
@@ -9665,24 +9850,24 @@ var shortSourceName = function shortSourceName(name) {
 // Module-level logo cache to avoid repeated full-collection reads
 var _logoCache = new Map();
 var getOrCreateSourceLogo = /*#__PURE__*/function () {
-  var _ref57 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee28(sourceName) {
-    var cacheKey, snap, lower, found, domain, url, ok, _short, q, genUrl, _short2, _t30, _t31, _t32;
-    return _regenerator().w(function (_context31) {
-      while (1) switch (_context31.p = _context31.n) {
+  var _ref60 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee31(sourceName) {
+    var cacheKey, snap, lower, found, domain, url, ok, _short, q, genUrl, _short2, _t32, _t33, _t34;
+    return _regenerator().w(function (_context34) {
+      while (1) switch (_context34.p = _context34.n) {
         case 0:
           // Return from cache if available
           cacheKey = (sourceName || '').toLowerCase().trim();
           if (!_logoCache.has(cacheKey)) {
-            _context31.n = 1;
+            _context34.n = 1;
             break;
           }
-          return _context31.a(2, _logoCache.get(cacheKey));
+          return _context34.a(2, _logoCache.get(cacheKey));
         case 1:
-          _context31.p = 1;
-          _context31.n = 2;
+          _context34.p = 1;
+          _context34.n = 2;
           return db.collection('logos').get();
         case 2:
-          snap = _context31.v;
+          snap = _context34.v;
           lower = sourceName.toLowerCase(); // Pre-cache all logos to avoid future reads
           snap.docs.forEach(function (d) {
             var k = (d.data().name || '').toLowerCase();
@@ -9693,26 +9878,26 @@ var getOrCreateSourceLogo = /*#__PURE__*/function () {
             return lower.includes(n) || n.includes(lower.split(/\s+/)[0]);
           });
           if (!found) {
-            _context31.n = 3;
+            _context34.n = 3;
             break;
           }
           _logoCache.set(cacheKey, found.data().url);
-          return _context31.a(2, found.data().url);
+          return _context34.a(2, found.data().url);
         case 3:
-          _context31.n = 5;
+          _context34.n = 5;
           break;
         case 4:
-          _context31.p = 4;
-          _t30 = _context31.v;
+          _context34.p = 4;
+          _t32 = _context34.v;
         case 5:
           // 2. Try Clearbit
           domain = guessSourceDomain(sourceName);
           if (!domain) {
-            _context31.n = 11;
+            _context34.n = 11;
             break;
           }
           url = 'https://logo.clearbit.com/' + domain;
-          _context31.n = 6;
+          _context34.n = 6;
           return new Promise(function (res) {
             var i = new Image();
             i.onload = function () {
@@ -9724,190 +9909,190 @@ var getOrCreateSourceLogo = /*#__PURE__*/function () {
             i.src = url + '?size=64';
           });
         case 6:
-          ok = _context31.v;
+          ok = _context34.v;
           if (!ok) {
-            _context31.n = 11;
+            _context34.n = 11;
             break;
           }
           _short = shortSourceName(sourceName);
           _logoCache.set(cacheKey, url);
-          _context31.p = 7;
-          _context31.n = 8;
+          _context34.p = 7;
+          _context34.n = 8;
           return db.collection('logos').add({
             url: url,
             name: _short,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
         case 8:
-          _context31.n = 10;
+          _context34.n = 10;
           break;
         case 9:
-          _context31.p = 9;
-          _t31 = _context31.v;
+          _context34.p = 9;
+          _t33 = _context34.v;
         case 10:
-          return _context31.a(2, url);
+          return _context34.a(2, url);
         case 11:
           // 3. Generate AI logo via Pollinations
           q = encodeURIComponent(sourceName + ' news logo icon minimal');
           genUrl = "https://image.pollinations.ai/prompt/".concat(q, "?width=128&height=128&seed=7&nologo=true");
           _short2 = shortSourceName(sourceName);
           _logoCache.set(cacheKey, genUrl);
-          _context31.p = 12;
-          _context31.n = 13;
+          _context34.p = 12;
+          _context34.n = 13;
           return db.collection('logos').add({
             url: genUrl,
             name: _short2,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
         case 13:
-          _context31.n = 15;
+          _context34.n = 15;
           break;
         case 14:
-          _context31.p = 14;
-          _t32 = _context31.v;
+          _context34.p = 14;
+          _t34 = _context34.v;
         case 15:
-          return _context31.a(2, genUrl);
+          return _context34.a(2, genUrl);
       }
-    }, _callee28, null, [[12, 14], [7, 9], [1, 4]]);
+    }, _callee31, null, [[12, 14], [7, 9], [1, 4]]);
   }));
-  return function getOrCreateSourceLogo(_x22) {
-    return _ref57.apply(this, arguments);
+  return function getOrCreateSourceLogo(_x25) {
+    return _ref60.apply(this, arguments);
   };
 }();
-var AINewsManager = function AINewsManager(_ref58) {
-  var toast = _ref58.toast,
-    onBack = _ref58.onBack;
-  var _useState175 = useState('chat'),
-    _useState176 = _slicedToArray(_useState175, 2),
-    tab = _useState176[0],
-    setTab = _useState176[1];
+var AINewsManager = function AINewsManager(_ref61) {
+  var toast = _ref61.toast,
+    onBack = _ref61.onBack;
+  var _useState179 = useState('chat'),
+    _useState180 = _slicedToArray(_useState179, 2),
+    tab = _useState180[0],
+    setTab = _useState180[1];
   // Chat
-  var _useState177 = useState([{
+  var _useState181 = useState([{
       role: 'ai',
       text: '👋 Hi! I\'m your AI news assistant powered by Puter.js AI.\n\nI can:\n• Search the web for latest breaking news\n• Write complete professional articles\n• Generate relevant images\n• Save drafts for your review\n\nType what kind of news you want, or click a suggestion below!'
     }]),
-    _useState178 = _slicedToArray(_useState177, 2),
-    msgs = _useState178[0],
-    setMsgs = _useState178[1];
-  var _useState179 = useState(''),
-    _useState180 = _slicedToArray(_useState179, 2),
-    chatInput = _useState180[0],
-    setChatInput = _useState180[1];
-  var _useState181 = useState(false),
     _useState182 = _slicedToArray(_useState181, 2),
-    chatBusy = _useState182[0],
-    setChatBusy = _useState182[1];
+    msgs = _useState182[0],
+    setMsgs = _useState182[1];
+  var _useState183 = useState(''),
+    _useState184 = _slicedToArray(_useState183, 2),
+    chatInput = _useState184[0],
+    setChatInput = _useState184[1];
+  var _useState185 = useState(false),
+    _useState186 = _slicedToArray(_useState185, 2),
+    chatBusy = _useState186[0],
+    setChatBusy = _useState186[1];
   var chatEndRef = useRef(null);
   // Generate
-  var _useState183 = useState('kuwait'),
-    _useState184 = _slicedToArray(_useState183, 2),
-    genCat = _useState184[0],
-    setGenCat = _useState184[1];
-  var _useState185 = useState(''),
-    _useState186 = _slicedToArray(_useState185, 2),
-    genTopic = _useState186[0],
-    setGenTopic = _useState186[1];
-  var _useState187 = useState(false),
+  var _useState187 = useState('kuwait'),
     _useState188 = _slicedToArray(_useState187, 2),
-    genBusy = _useState188[0],
-    setGenBusy = _useState188[1];
-  var _useState189 = useState(null),
+    genCat = _useState188[0],
+    setGenCat = _useState188[1];
+  var _useState189 = useState(''),
     _useState190 = _slicedToArray(_useState189, 2),
-    preview = _useState190[0],
-    setPreview = _useState190[1];
-  // Drafts
-  var _useState191 = useState([]),
+    genTopic = _useState190[0],
+    setGenTopic = _useState190[1];
+  var _useState191 = useState(false),
     _useState192 = _slicedToArray(_useState191, 2),
-    drafts = _useState192[0],
-    setDrafts = _useState192[1];
-  var _useState193 = useState(true),
+    genBusy = _useState192[0],
+    setGenBusy = _useState192[1];
+  var _useState193 = useState(null),
     _useState194 = _slicedToArray(_useState193, 2),
-    draftsLoading = _useState194[0],
-    setDraftsLoading = _useState194[1];
-  var _useState195 = useState(null),
+    preview = _useState194[0],
+    setPreview = _useState194[1];
+  // Drafts
+  var _useState195 = useState([]),
     _useState196 = _slicedToArray(_useState195, 2),
-    actionId = _useState196[0],
-    setActionId = _useState196[1];
-  // Draft inline edit
-  var _useState197 = useState(null),
+    drafts = _useState196[0],
+    setDrafts = _useState196[1];
+  var _useState197 = useState(true),
     _useState198 = _slicedToArray(_useState197, 2),
-    draftEdit = _useState198[0],
-    setDraftEdit = _useState198[1]; // {id, form}
-  var _useState199 = useState(false),
+    draftsLoading = _useState198[0],
+    setDraftsLoading = _useState198[1];
+  var _useState199 = useState(null),
     _useState200 = _slicedToArray(_useState199, 2),
-    draftSaving = _useState200[0],
-    setDraftSaving = _useState200[1];
-  // Video generation
-  var _useState201 = useState(false),
+    actionId = _useState200[0],
+    setActionId = _useState200[1];
+  // Draft inline edit
+  var _useState201 = useState(null),
     _useState202 = _slicedToArray(_useState201, 2),
-    videoBusy = _useState202[0],
-    setVideoBusy = _useState202[1];
-  var _useState203 = useState(0),
+    draftEdit = _useState202[0],
+    setDraftEdit = _useState202[1]; // {id, form}
+  var _useState203 = useState(false),
     _useState204 = _slicedToArray(_useState203, 2),
-    videoProgress = _useState204[0],
-    setVideoProgress = _useState204[1];
-  var _useState205 = useState(''),
+    draftSaving = _useState204[0],
+    setDraftSaving = _useState204[1];
+  // Video generation
+  var _useState205 = useState(false),
     _useState206 = _slicedToArray(_useState205, 2),
-    videoStatus = _useState206[0],
-    setVideoStatus = _useState206[1]; // 'rendering' | 'uploading' | ''
-  var _useState207 = useState(null),
+    videoBusy = _useState206[0],
+    setVideoBusy = _useState206[1];
+  var _useState207 = useState(0),
     _useState208 = _slicedToArray(_useState207, 2),
-    videoResult = _useState208[0],
-    setVideoResult = _useState208[1]; // {url, blob, article}
-  var _useState209 = useState(20),
+    videoProgress = _useState208[0],
+    setVideoProgress = _useState208[1];
+  var _useState209 = useState(''),
     _useState210 = _slicedToArray(_useState209, 2),
-    videoDur = _useState210[0],
-    setVideoDur = _useState210[1];
+    videoStatus = _useState210[0],
+    setVideoStatus = _useState210[1]; // 'rendering' | 'uploading' | ''
+  var _useState211 = useState(null),
+    _useState212 = _slicedToArray(_useState211, 2),
+    videoResult = _useState212[0],
+    setVideoResult = _useState212[1]; // {url, blob, article}
+  var _useState213 = useState(20),
+    _useState214 = _slicedToArray(_useState213, 2),
+    videoDur = _useState214[0],
+    setVideoDur = _useState214[1];
   var videoTimerRef = useRef(null);
 
   // ── Video generation ──────────────────────────────────────────
   var uploadVideoBlob = /*#__PURE__*/function () {
-    var _ref59 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee29(blob) {
+    var _ref62 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee32(blob) {
       var fd, res, data;
-      return _regenerator().w(function (_context32) {
-        while (1) switch (_context32.n) {
+      return _regenerator().w(function (_context35) {
+        while (1) switch (_context35.n) {
           case 0:
             fd = new FormData();
             fd.append('file', blob, 'kwt-news-' + Date.now() + '.webm');
             fd.append('upload_preset', CLOUDINARY.uploadPreset);
             fd.append('folder', 'sql_users');
             // Use explicit video endpoint (auto/upload may reject .webm depending on preset)
-            _context32.n = 1;
+            _context35.n = 1;
             return fetch("https://api.cloudinary.com/v1_1/".concat(CLOUDINARY.cloudName, "/video/upload"), {
               method: 'POST',
               body: fd
             });
           case 1:
-            res = _context32.v;
-            _context32.n = 2;
+            res = _context35.v;
+            _context35.n = 2;
             return res.json();
           case 2:
-            data = _context32.v;
+            data = _context35.v;
             if (!data.error) {
-              _context32.n = 3;
+              _context35.n = 3;
               break;
             }
             throw new Error('Cloudinary: ' + data.error.message);
           case 3:
-            return _context32.a(2, data.secure_url);
+            return _context35.a(2, data.secure_url);
         }
-      }, _callee29);
+      }, _callee32);
     }));
-    return function uploadVideoBlob(_x23) {
-      return _ref59.apply(this, arguments);
+    return function uploadVideoBlob(_x26) {
+      return _ref62.apply(this, arguments);
     };
   }();
   var genVideo = /*#__PURE__*/function () {
-    var _ref60 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee30(article) {
-      var prog, result, _t33;
-      return _regenerator().w(function (_context33) {
-        while (1) switch (_context33.p = _context33.n) {
+    var _ref63 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee33(article) {
+      var prog, result, _t35;
+      return _regenerator().w(function (_context36) {
+        while (1) switch (_context36.p = _context36.n) {
           case 0:
             if (!videoBusy) {
-              _context33.n = 1;
+              _context36.n = 1;
               break;
             }
-            return _context33.a(2);
+            return _context36.a(2);
           case 1:
             setVideoBusy(true);
             setVideoResult(null);
@@ -9918,11 +10103,11 @@ var AINewsManager = function AINewsManager(_ref58) {
               prog = Math.min(prog + 100 / (videoDur * 4), 95);
               setVideoProgress(Math.round(prog));
             }, 250);
-            _context33.p = 2;
-            _context33.n = 3;
+            _context36.p = 2;
+            _context36.n = 3;
             return makeNewsVideo(article, videoDur);
           case 3:
-            result = _context33.v;
+            result = _context36.v;
             clearInterval(videoTimerRef.current);
             setVideoProgress(100);
             setVideoStatus('');
@@ -9933,23 +10118,23 @@ var AINewsManager = function AINewsManager(_ref58) {
               articleTitle: article.title
             });
             toast.add('🎬 Video ready!', 'ok');
-            _context33.n = 5;
+            _context36.n = 5;
             break;
           case 4:
-            _context33.p = 4;
-            _t33 = _context33.v;
+            _context36.p = 4;
+            _t35 = _context36.v;
             clearInterval(videoTimerRef.current);
             setVideoStatus('');
-            toast.add('Video error: ' + _t33.message, 'error');
+            toast.add('Video error: ' + _t35.message, 'error');
           case 5:
             setVideoBusy(false);
           case 6:
-            return _context33.a(2);
+            return _context36.a(2);
         }
-      }, _callee30, null, [[2, 4]]);
+      }, _callee33, null, [[2, 4]]);
     }));
-    return function genVideo(_x24) {
-      return _ref60.apply(this, arguments);
+    return function genVideo(_x27) {
+      return _ref63.apply(this, arguments);
     };
   }();
   var downloadVideo = function downloadVideo() {
@@ -9977,40 +10162,40 @@ var AINewsManager = function AINewsManager(_ref58) {
     });
   };
   var saveDraftEdit = /*#__PURE__*/function () {
-    var _ref61 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee31() {
-      var _t34;
-      return _regenerator().w(function (_context34) {
-        while (1) switch (_context34.p = _context34.n) {
+    var _ref64 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee34() {
+      var _t36;
+      return _regenerator().w(function (_context37) {
+        while (1) switch (_context37.p = _context37.n) {
           case 0:
             if (draftEdit) {
-              _context34.n = 1;
+              _context37.n = 1;
               break;
             }
-            return _context34.a(2);
+            return _context37.a(2);
           case 1:
             setDraftSaving(true);
-            _context34.p = 2;
-            _context34.n = 3;
+            _context37.p = 2;
+            _context37.n = 3;
             return db.collection('news').doc(draftEdit.id).update(draftEdit.form);
           case 3:
             toast.add('Draft updated!', 'ok');
             setDraftEdit(null);
             fetchDrafts();
-            _context34.n = 5;
+            _context37.n = 5;
             break;
           case 4:
-            _context34.p = 4;
-            _t34 = _context34.v;
+            _context37.p = 4;
+            _t36 = _context37.v;
             toast.add('Update failed', 'error');
           case 5:
             setDraftSaving(false);
           case 6:
-            return _context34.a(2);
+            return _context37.a(2);
         }
-      }, _callee31, null, [[2, 4]]);
+      }, _callee34, null, [[2, 4]]);
     }));
     return function saveDraftEdit() {
-      return _ref61.apply(this, arguments);
+      return _ref64.apply(this, arguments);
     };
   }();
   useEffect(function () {
@@ -10023,17 +10208,17 @@ var AINewsManager = function AINewsManager(_ref58) {
     });
   }, [msgs]);
   var fetchDrafts = /*#__PURE__*/function () {
-    var _ref62 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee32() {
-      var snap, _t35;
-      return _regenerator().w(function (_context35) {
-        while (1) switch (_context35.p = _context35.n) {
+    var _ref65 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee35() {
+      var snap, _t37;
+      return _regenerator().w(function (_context38) {
+        while (1) switch (_context38.p = _context38.n) {
           case 0:
             setDraftsLoading(true);
-            _context35.p = 1;
-            _context35.n = 2;
+            _context38.p = 1;
+            _context38.n = 2;
             return db.collection('news').orderBy('timestamp', 'desc').limit(100).get();
           case 2:
-            snap = _context35.v;
+            snap = _context38.v;
             // Show ALL AI-generated articles (hidden drafts AND published auto-posts)
             setDrafts(snap.docs.map(function (d) {
               return _objectSpread({
@@ -10042,70 +10227,70 @@ var AINewsManager = function AINewsManager(_ref58) {
             }).filter(function (d) {
               return d.aiGenerated;
             }));
-            _context35.n = 4;
+            _context38.n = 4;
             break;
           case 3:
-            _context35.p = 3;
-            _t35 = _context35.v;
-            console.error(_t35);
+            _context38.p = 3;
+            _t37 = _context38.v;
+            console.error(_t37);
           case 4:
             setDraftsLoading(false);
           case 5:
-            return _context35.a(2);
+            return _context38.a(2);
         }
-      }, _callee32, null, [[1, 3]]);
+      }, _callee35, null, [[1, 3]]);
     }));
     return function fetchDrafts() {
-      return _ref62.apply(this, arguments);
+      return _ref65.apply(this, arguments);
     };
   }();
   var getImg = /*#__PURE__*/function () {
-    var _ref63 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee33(query) {
+    var _ref66 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee36(query) {
       var forceAI,
         u,
-        _args36 = arguments,
-        _t36;
-      return _regenerator().w(function (_context36) {
-        while (1) switch (_context36.p = _context36.n) {
+        _args39 = arguments,
+        _t38;
+      return _regenerator().w(function (_context39) {
+        while (1) switch (_context39.p = _context39.n) {
           case 0:
-            forceAI = _args36.length > 1 && _args36[1] !== undefined ? _args36[1] : false;
+            forceAI = _args39.length > 1 && _args39[1] !== undefined ? _args39[1] : false;
             if (forceAI) {
-              _context36.n = 5;
+              _context39.n = 5;
               break;
             }
-            _context36.p = 1;
-            _context36.n = 2;
+            _context39.p = 1;
+            _context39.n = 2;
             return fetchPixabay(query);
           case 2:
-            u = _context36.v;
+            u = _context39.v;
             if (!u) {
-              _context36.n = 3;
+              _context39.n = 3;
               break;
             }
-            return _context36.a(2, u);
+            return _context39.a(2, u);
           case 3:
-            _context36.n = 5;
+            _context39.n = 5;
             break;
           case 4:
-            _context36.p = 4;
-            _t36 = _context36.v;
+            _context39.p = 4;
+            _t38 = _context39.v;
           case 5:
-            return _context36.a(2, pollinationsUrl(query));
+            return _context39.a(2, pollinationsUrl(query));
         }
-      }, _callee33, null, [[1, 4]]);
+      }, _callee36, null, [[1, 4]]);
     }));
-    return function getImg(_x25) {
-      return _ref63.apply(this, arguments);
+    return function getImg(_x28) {
+      return _ref66.apply(this, arguments);
     };
   }();
   var saveDraft = /*#__PURE__*/function () {
-    var _ref64 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee34(article) {
+    var _ref67 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee37(article) {
       var isVideo;
-      return _regenerator().w(function (_context37) {
-        while (1) switch (_context37.n) {
+      return _regenerator().w(function (_context40) {
+        while (1) switch (_context40.n) {
           case 0:
             isVideo = !!article.videoUrl;
-            _context37.n = 1;
+            _context40.n = 1;
             return db.collection('news').add({
               title: article.title || '',
               summary: article.summary || '',
@@ -10127,27 +10312,27 @@ var AINewsManager = function AINewsManager(_ref58) {
               commentCount: 0
             });
           case 1:
-            return _context37.a(2);
+            return _context40.a(2);
         }
-      }, _callee34);
+      }, _callee37);
     }));
-    return function saveDraft(_x26) {
-      return _ref64.apply(this, arguments);
+    return function saveDraft(_x29) {
+      return _ref67.apply(this, arguments);
     };
   }();
 
   // ── Chat ─────────────────────────────────────────────
   var sendChat = /*#__PURE__*/function () {
-    var _ref65 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee35() {
-      var userText, isArticleReq, prompt, responseText, parsed, replyText, article, _t37;
-      return _regenerator().w(function (_context38) {
-        while (1) switch (_context38.p = _context38.n) {
+    var _ref68 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee38() {
+      var userText, isArticleReq, prompt, responseText, parsed, replyText, article, _t39;
+      return _regenerator().w(function (_context41) {
+        while (1) switch (_context41.p = _context41.n) {
           case 0:
             if (!(!chatInput.trim() || chatBusy)) {
-              _context38.n = 1;
+              _context41.n = 1;
               break;
             }
-            return _context38.a(2);
+            return _context41.a(2);
           case 1:
             userText = chatInput.trim();
             setChatInput('');
@@ -10158,13 +10343,13 @@ var AINewsManager = function AINewsManager(_ref58) {
               }]);
             });
             setChatBusy(true);
-            _context38.p = 2;
+            _context41.p = 2;
             isArticleReq = /generat|creat|writ|make|news|article|draft|cover|find|search|latest|today|break/i.test(userText);
             prompt = isArticleReq ? "You are a professional journalist for KWT News (Kuwait & world news platform).\nThe user wants: \"".concat(userText, "\"\nWrite a realistic, professional news article based on your knowledge of current world events and recent news trends. Today's date context: ").concat(new Date().toDateString(), ".\n\nIMPORTANT: Write as a real journalist would. Use your training knowledge about real events, real places, real facts. Do NOT say you cannot access the internet \u2014 just write the best article you can.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\n  \"reply\": \"Brief 1-sentence description of the article you wrote\",\n  \"article\": {\n    \"title\": \"Professional headline max 120 chars\",\n    \"summary\": \"2-3 sentence news summary\",\n    \"content\": \"Full article 4-6 paragraphs with facts, context, background\",\n    \"imageQuery\": \"3-5 word image search term\",\n    \"category\": \"kuwait OR world OR kuwait-jobs OR kuwait-offers OR funny-news-meme\",\n    \"readTime\": \"X min read\",\n    \"source\": \"Relevant news source name (e.g. KWT News, Reuters, BBC)\",\n    \"isBreaking\": false\n  }\n}") : "You are an AI news assistant for KWT News admin panel.\nUser: \"".concat(userText, "\"\nAnswer helpfully and concisely based on your knowledge. Never say you cannot access the internet.\nReturn ONLY JSON: {\"reply\": \"your helpful response max 300 chars\", \"article\": null}");
-            _context38.n = 3;
+            _context41.n = 3;
             return callAI(prompt);
           case 3:
-            responseText = _context38.v;
+            responseText = _context41.v;
             parsed = parseJsonFromText(responseText); // Never show raw JSON — if parse failed, show a clean fallback
             replyText = (parsed === null || parsed === void 0 ? void 0 : parsed.reply) || (parsed ? 'Article generated! Click the button below to save it as a video draft.' : responseText.replace(/^\s*\{[\s\S]*\}\s*$/, '').trim().slice(0, 400) || '✅ Article ready! Click "Generate Video & Save Draft" below.');
             article = (parsed === null || parsed === void 0 ? void 0 : parsed.article) || null;
@@ -10175,65 +10360,65 @@ var AINewsManager = function AINewsManager(_ref58) {
                 article: article
               }]);
             });
-            _context38.n = 5;
+            _context41.n = 5;
             break;
           case 4:
-            _context38.p = 4;
-            _t37 = _context38.v;
+            _context41.p = 4;
+            _t39 = _context41.v;
             setMsgs(function (p) {
               return [].concat(_toConsumableArray(p), [{
                 role: 'ai',
-                text: 'Sorry, error: ' + _t37.message + '. Please try again.'
+                text: 'Sorry, error: ' + _t39.message + '. Please try again.'
               }]);
             });
           case 5:
             setChatBusy(false);
           case 6:
-            return _context38.a(2);
+            return _context41.a(2);
         }
-      }, _callee35, null, [[2, 4]]);
+      }, _callee38, null, [[2, 4]]);
     }));
     return function sendChat() {
-      return _ref65.apply(this, arguments);
+      return _ref68.apply(this, arguments);
     };
   }();
   var saveChatDraft = /*#__PURE__*/function () {
-    var _ref66 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee36(article) {
-      var sourceLogo, src, titleWords, _yield$Promise$all3, _yield$Promise$all4, img1, img2, img3, seenImgUrls, extraImages, fullArticle, docRef, prog, videoUrl, result, _t38, _t39, _t40, _t41;
-      return _regenerator().w(function (_context39) {
-        while (1) switch (_context39.p = _context39.n) {
+    var _ref69 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee39(article) {
+      var sourceLogo, src, titleWords, _yield$Promise$all3, _yield$Promise$all4, img1, img2, img3, seenImgUrls, extraImages, fullArticle, docRef, prog, videoUrl, result, _t40, _t41, _t42, _t43;
+      return _regenerator().w(function (_context42) {
+        while (1) switch (_context42.p = _context42.n) {
           case 0:
             if (!videoBusy) {
-              _context39.n = 1;
+              _context42.n = 1;
               break;
             }
-            return _context39.a(2);
+            return _context42.a(2);
           case 1:
             setVideoBusy(true);
             setVideoResult(null);
             setVideoProgress(0);
-            _context39.p = 2;
+            _context42.p = 2;
             // 1. Fetch source logo
             setVideoStatus('logo');
             toast.add('Finding source logo...', 'info');
             sourceLogo = '';
             src = shortSourceName(article.source || 'KWT News');
-            _context39.p = 3;
-            _context39.n = 4;
+            _context42.p = 3;
+            _context42.n = 4;
             return getOrCreateSourceLogo(article.source || 'KWT News');
           case 4:
-            sourceLogo = _context39.v;
-            _context39.n = 6;
+            sourceLogo = _context42.v;
+            _context42.n = 6;
             break;
           case 5:
-            _context39.p = 5;
-            _t38 = _context39.v;
+            _context42.p = 5;
+            _t40 = _context42.v;
           case 6:
             // 2. Fetch distinct background images for video transitions (deduplicated)
             setVideoStatus('image');
             toast.add('Fetching images...', 'info');
             titleWords = (article.title || '').split(' ').slice(0, 4).join(' ');
-            _context39.n = 7;
+            _context42.n = 7;
             return Promise.all([getImg(article.imageQuery || article.title, false)["catch"](function () {
               return '';
             }), getImg(titleWords + ' news event', false)["catch"](function () {
@@ -10242,7 +10427,7 @@ var AINewsManager = function AINewsManager(_ref58) {
               return '';
             })]);
           case 7:
-            _yield$Promise$all3 = _context39.v;
+            _yield$Promise$all3 = _context42.v;
             _yield$Promise$all4 = _slicedToArray(_yield$Promise$all3, 3);
             img1 = _yield$Promise$all4[0];
             img2 = _yield$Promise$all4[1];
@@ -10260,8 +10445,8 @@ var AINewsManager = function AINewsManager(_ref58) {
               sourceLogo: sourceLogo,
               source: src
             });
-            _context39.p = 8;
-            _context39.n = 9;
+            _context42.p = 8;
+            _context42.n = 9;
             return db.collection('news').add({
               title: fullArticle.title || '',
               summary: fullArticle.summary || '',
@@ -10285,13 +10470,13 @@ var AINewsManager = function AINewsManager(_ref58) {
               commentCount: 0
             });
           case 9:
-            docRef = _context39.v;
-            _context39.n = 11;
+            docRef = _context42.v;
+            _context42.n = 11;
             break;
           case 10:
-            _context39.p = 10;
-            _t39 = _context39.v;
-            throw new Error('Draft save failed: ' + _t39.message);
+            _context42.p = 10;
+            _t41 = _context42.v;
+            throw new Error('Draft save failed: ' + _t41.message);
           case 11:
             // 4. Render video with voice-over
             setVideoStatus('rendering');
@@ -10303,11 +10488,11 @@ var AINewsManager = function AINewsManager(_ref58) {
               setVideoProgress(prog);
             }, 500);
             videoUrl = '';
-            _context39.p = 12;
-            _context39.n = 13;
+            _context42.p = 12;
+            _context42.n = 13;
             return makeNewsVideoWithVoice(fullArticle, videoDur);
           case 13:
-            result = _context39.v;
+            result = _context42.v;
             clearInterval(videoTimerRef.current);
             setVideoProgress(85);
             setVideoResult({
@@ -10320,14 +10505,14 @@ var AINewsManager = function AINewsManager(_ref58) {
             // 5. Upload to Cloudinary
             setVideoStatus('uploading');
             toast.add('☁️ Uploading to cloud...', 'info');
-            _context39.n = 14;
+            _context42.n = 14;
             return uploadVideoBlob(result.blob);
           case 14:
-            videoUrl = _context39.v;
+            videoUrl = _context42.v;
             setVideoProgress(100);
 
             // 6. Update draft with videoUrl
-            _context39.n = 15;
+            _context42.n = 15;
             return db.collection('news').doc(docRef.id).update({
               videoUrl: videoUrl,
               mediaType: 'article'
@@ -10342,11 +10527,11 @@ var AINewsManager = function AINewsManager(_ref58) {
                 text: '✅ Video draft saved! Go to the Drafts tab to review and publish.'
               }]);
             });
-            _context39.n = 17;
+            _context42.n = 17;
             break;
           case 16:
-            _context39.p = 16;
-            _t40 = _context39.v;
+            _context42.p = 16;
+            _t42 = _context42.v;
             clearInterval(videoTimerRef.current);
             // Video failed but text draft already saved — still show success
             setVideoStatus('');
@@ -10360,163 +10545,163 @@ var AINewsManager = function AINewsManager(_ref58) {
             });
           case 17:
             fetchDrafts();
-            _context39.n = 19;
+            _context42.n = 19;
             break;
           case 18:
-            _context39.p = 18;
-            _t41 = _context39.v;
+            _context42.p = 18;
+            _t43 = _context42.v;
             clearInterval(videoTimerRef.current);
             setVideoStatus('');
             setVideoBusy(false);
-            toast.add('Failed: ' + _t41.message, 'error');
+            toast.add('Failed: ' + _t43.message, 'error');
           case 19:
-            return _context39.a(2);
+            return _context42.a(2);
         }
-      }, _callee36, null, [[12, 16], [8, 10], [3, 5], [2, 18]]);
+      }, _callee39, null, [[12, 16], [8, 10], [3, 5], [2, 18]]);
     }));
-    return function saveChatDraft(_x27) {
-      return _ref66.apply(this, arguments);
+    return function saveChatDraft(_x30) {
+      return _ref69.apply(this, arguments);
     };
   }();
 
   // ── Auto Generate ─────────────────────────────────────
   var generate = /*#__PURE__*/function () {
-    var _ref67 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee37() {
-      var catInfo, topicPart, prompt, text, article, imageUrl, _t42;
-      return _regenerator().w(function (_context40) {
-        while (1) switch (_context40.p = _context40.n) {
+    var _ref70 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee40() {
+      var catInfo, topicPart, prompt, text, article, imageUrl, _t44;
+      return _regenerator().w(function (_context43) {
+        while (1) switch (_context43.p = _context43.n) {
           case 0:
             if (!genBusy) {
-              _context40.n = 1;
+              _context43.n = 1;
               break;
             }
-            return _context40.a(2);
+            return _context43.a(2);
           case 1:
             setGenBusy(true);
             setPreview(null);
-            _context40.p = 2;
+            _context43.p = 2;
             catInfo = CATEGORIES.find(function (c) {
               return c.value === genCat;
             });
             topicPart = genTopic.trim() ? "Topic: ".concat(genTopic.trim()) : "Write about the most significant recent news for this category";
             prompt = "You are a professional journalist for KWT News.\nCategory: ".concat((catInfo === null || catInfo === void 0 ? void 0 : catInfo.label) || genCat, "\n").concat(topicPart, "\nDate context: ").concat(new Date().toDateString(), "\n\nWrite a complete, realistic professional news article based on your knowledge of real world events, facts, and news trends. Do NOT say you cannot access the internet \u2014 use your training knowledge and write confidently as a journalist would.\n\nReturn ONLY valid JSON (no markdown, no code blocks):\n{\n  \"title\": \"Compelling professional headline max 120 chars\",\n  \"summary\": \"2-3 sentence news summary\",\n  \"content\": \"Full article 4-6 paragraphs with facts, background, and context\",\n  \"imageQuery\": \"3-5 word image search term\",\n  \"category\": \"").concat(genCat, "\",\n  \"readTime\": \"X min read\",\n  \"source\": \"Appropriate news source (e.g. KWT News, Reuters, Gulf News)\",\n  \"isBreaking\": false,\n  \"newsFoundAbout\": \"1 sentence describing what this article covers\"\n}");
-            _context40.n = 3;
+            _context43.n = 3;
             return callAI(prompt);
           case 3:
-            text = _context40.v;
+            text = _context43.v;
             article = parseJsonFromText(text);
             if (!(!article || !article.title)) {
-              _context40.n = 4;
+              _context43.n = 4;
               break;
             }
             throw new Error('Could not parse AI response. Please try again.');
           case 4:
-            _context40.n = 5;
+            _context43.n = 5;
             return getImg(article.imageQuery || article.title, imgSrc === 'ai');
           case 5:
-            imageUrl = _context40.v;
+            imageUrl = _context43.v;
             setPreview(_objectSpread(_objectSpread({}, article), {}, {
               imageUrl: imageUrl
             }));
-            _context40.n = 7;
+            _context43.n = 7;
             break;
           case 6:
-            _context40.p = 6;
-            _t42 = _context40.v;
-            toast.add('Error: ' + _t42.message, 'error');
+            _context43.p = 6;
+            _t44 = _context43.v;
+            toast.add('Error: ' + _t44.message, 'error');
           case 7:
             setGenBusy(false);
           case 8:
-            return _context40.a(2);
+            return _context43.a(2);
         }
-      }, _callee37, null, [[2, 6]]);
+      }, _callee40, null, [[2, 6]]);
     }));
     return function generate() {
-      return _ref67.apply(this, arguments);
+      return _ref70.apply(this, arguments);
     };
   }();
   var savePreview = /*#__PURE__*/function () {
-    var _ref68 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee38() {
-      var _t43;
-      return _regenerator().w(function (_context41) {
-        while (1) switch (_context41.p = _context41.n) {
+    var _ref71 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee41() {
+      var _t45;
+      return _regenerator().w(function (_context44) {
+        while (1) switch (_context44.p = _context44.n) {
           case 0:
             if (preview) {
-              _context41.n = 1;
+              _context44.n = 1;
               break;
             }
-            return _context41.a(2);
+            return _context44.a(2);
           case 1:
-            _context41.p = 1;
-            _context41.n = 2;
+            _context44.p = 1;
+            _context44.n = 2;
             return saveDraft(preview);
           case 2:
             toast.add('Saved to drafts!', 'ok');
             setPreview(null);
-            _context41.n = 4;
+            _context44.n = 4;
             break;
           case 3:
-            _context41.p = 3;
-            _t43 = _context41.v;
+            _context44.p = 3;
+            _t45 = _context44.v;
             toast.add('Save failed', 'error');
           case 4:
-            return _context41.a(2);
+            return _context44.a(2);
         }
-      }, _callee38, null, [[1, 3]]);
+      }, _callee41, null, [[1, 3]]);
     }));
     return function savePreview() {
-      return _ref68.apply(this, arguments);
+      return _ref71.apply(this, arguments);
     };
   }();
   var regenImage = /*#__PURE__*/function () {
-    var _ref69 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee39() {
-      var imageUrl, _t44;
-      return _regenerator().w(function (_context42) {
-        while (1) switch (_context42.p = _context42.n) {
+    var _ref72 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee42() {
+      var imageUrl, _t46;
+      return _regenerator().w(function (_context45) {
+        while (1) switch (_context45.p = _context45.n) {
           case 0:
             if (preview) {
-              _context42.n = 1;
+              _context45.n = 1;
               break;
             }
-            return _context42.a(2);
+            return _context45.a(2);
           case 1:
-            _context42.p = 1;
-            _context42.n = 2;
+            _context45.p = 1;
+            _context45.n = 2;
             return getImg(preview.imageQuery || preview.title, imgSrc !== 'ai');
           case 2:
-            imageUrl = _context42.v;
+            imageUrl = _context45.v;
             setPreview(function (p) {
               return _objectSpread(_objectSpread({}, p), {}, {
                 imageUrl: imageUrl
               });
             });
             toast.add('Image updated!', 'ok');
-            _context42.n = 4;
+            _context45.n = 4;
             break;
           case 3:
-            _context42.p = 3;
-            _t44 = _context42.v;
+            _context45.p = 3;
+            _t46 = _context45.v;
             toast.add('Image failed', 'error');
           case 4:
-            return _context42.a(2);
+            return _context45.a(2);
         }
-      }, _callee39, null, [[1, 3]]);
+      }, _callee42, null, [[1, 3]]);
     }));
     return function regenImage() {
-      return _ref69.apply(this, arguments);
+      return _ref72.apply(this, arguments);
     };
   }();
 
   // ── Drafts ───────────────────────────────────────────
   var publishDraft = /*#__PURE__*/function () {
-    var _ref70 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee40(id) {
-      var _t45;
-      return _regenerator().w(function (_context43) {
-        while (1) switch (_context43.p = _context43.n) {
+    var _ref73 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee43(id) {
+      var _t47;
+      return _regenerator().w(function (_context46) {
+        while (1) switch (_context46.p = _context46.n) {
           case 0:
             setActionId(id + '-pub');
-            _context43.p = 1;
-            _context43.n = 2;
+            _context46.p = 1;
+            _context46.n = 2;
             return db.collection('news').doc(id).update({
               hidden: false,
               published: true,
@@ -10525,32 +10710,32 @@ var AINewsManager = function AINewsManager(_ref58) {
           case 2:
             toast.add('Published! Article is now live.', 'ok');
             fetchDrafts();
-            _context43.n = 4;
+            _context46.n = 4;
             break;
           case 3:
-            _context43.p = 3;
-            _t45 = _context43.v;
+            _context46.p = 3;
+            _t47 = _context46.v;
             toast.add('Publish failed', 'error');
           case 4:
             setActionId(null);
           case 5:
-            return _context43.a(2);
+            return _context46.a(2);
         }
-      }, _callee40, null, [[1, 3]]);
+      }, _callee43, null, [[1, 3]]);
     }));
-    return function publishDraft(_x28) {
-      return _ref70.apply(this, arguments);
+    return function publishDraft(_x31) {
+      return _ref73.apply(this, arguments);
     };
   }();
   var delDraft = /*#__PURE__*/function () {
-    var _ref71 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee41(id) {
-      var _t46;
-      return _regenerator().w(function (_context44) {
-        while (1) switch (_context44.p = _context44.n) {
+    var _ref74 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee44(id) {
+      var _t48;
+      return _regenerator().w(function (_context47) {
+        while (1) switch (_context47.p = _context47.n) {
           case 0:
             setActionId(id + '-del');
-            _context44.p = 1;
-            _context44.n = 2;
+            _context47.p = 1;
+            _context47.n = 2;
             return db.collection('news').doc(id)["delete"]();
           case 2:
             toast.add('Draft deleted', 'ok');
@@ -10559,21 +10744,21 @@ var AINewsManager = function AINewsManager(_ref58) {
                 return d.id !== id;
               });
             });
-            _context44.n = 4;
+            _context47.n = 4;
             break;
           case 3:
-            _context44.p = 3;
-            _t46 = _context44.v;
+            _context47.p = 3;
+            _t48 = _context47.v;
             toast.add('Delete failed', 'error');
           case 4:
             setActionId(null);
           case 5:
-            return _context44.a(2);
+            return _context47.a(2);
         }
-      }, _callee41, null, [[1, 3]]);
+      }, _callee44, null, [[1, 3]]);
     }));
-    return function delDraft(_x29) {
-      return _ref71.apply(this, arguments);
+    return function delDraft(_x32) {
+      return _ref74.apply(this, arguments);
     };
   }();
   var tbStyle = function tbStyle(t) {
@@ -11505,8 +11690,8 @@ var AINewsManager = function AINewsManager(_ref58) {
 };
 
 // ── MEDIA MANAGER (Social Media Hub) ─────────────────────────
-var MediaManager = function MediaManager(_ref72) {
-  var toast = _ref72.toast;
+var MediaManager = function MediaManager(_ref75) {
+  var toast = _ref75.toast;
   var PLATFORMS = [{
     id: 'instagram',
     label: 'Instagram',
@@ -11629,46 +11814,46 @@ var MediaManager = function MediaManager(_ref72) {
     tokenField: 'accessToken',
     hasPageId: false
   }];
-  var _useState211 = useState('accounts'),
-    _useState212 = _slicedToArray(_useState211, 2),
-    activeTab = _useState212[0],
-    setActiveTab = _useState212[1];
-  var _useState213 = useState({}),
-    _useState214 = _slicedToArray(_useState213, 2),
-    accounts = _useState214[0],
-    setAccounts = _useState214[1];
-  var _useState215 = useState([]),
+  var _useState215 = useState('accounts'),
     _useState216 = _slicedToArray(_useState215, 2),
-    queue = _useState216[0],
-    setQueue = _useState216[1];
-  var _useState217 = useState(true),
+    activeTab = _useState216[0],
+    setActiveTab = _useState216[1];
+  var _useState217 = useState({}),
     _useState218 = _slicedToArray(_useState217, 2),
-    loadingAcc = _useState218[0],
-    setLoadingAcc = _useState218[1];
-  var _useState219 = useState(true),
+    accounts = _useState218[0],
+    setAccounts = _useState218[1];
+  var _useState219 = useState([]),
     _useState220 = _slicedToArray(_useState219, 2),
-    loadingQ = _useState220[0],
-    setLoadingQ = _useState220[1];
-  var _useState221 = useState(null),
+    queue = _useState220[0],
+    setQueue = _useState220[1];
+  var _useState221 = useState(true),
     _useState222 = _slicedToArray(_useState221, 2),
-    editing = _useState222[0],
-    setEditing = _useState222[1]; // platform id
-  var _useState223 = useState({}),
+    loadingAcc = _useState222[0],
+    setLoadingAcc = _useState222[1];
+  var _useState223 = useState(true),
     _useState224 = _slicedToArray(_useState223, 2),
-    editForm = _useState224[0],
-    setEditForm = _useState224[1];
-  var _useState225 = useState(false),
+    loadingQ = _useState224[0],
+    setLoadingQ = _useState224[1];
+  var _useState225 = useState(null),
     _useState226 = _slicedToArray(_useState225, 2),
-    saving = _useState226[0],
-    setSaving = _useState226[1];
-  var _useState227 = useState([]),
+    editing = _useState226[0],
+    setEditing = _useState226[1]; // platform id
+  var _useState227 = useState({}),
     _useState228 = _slicedToArray(_useState227, 2),
-    videos = _useState228[0],
-    setVideos = _useState228[1];
-  var _useState229 = useState(true),
+    editForm = _useState228[0],
+    setEditForm = _useState228[1];
+  var _useState229 = useState(false),
     _useState230 = _slicedToArray(_useState229, 2),
-    loadingVid = _useState230[0],
-    setLoadingVid = _useState230[1];
+    saving = _useState230[0],
+    setSaving = _useState230[1];
+  var _useState231 = useState([]),
+    _useState232 = _slicedToArray(_useState231, 2),
+    videos = _useState232[0],
+    setVideos = _useState232[1];
+  var _useState233 = useState(true),
+    _useState234 = _slicedToArray(_useState233, 2),
+    loadingVid = _useState234[0],
+    setLoadingVid = _useState234[1];
 
   // ── Firestore: social accounts ───────────────────────────────
   useEffect(function () {
@@ -11735,23 +11920,23 @@ var MediaManager = function MediaManager(_ref72) {
     setEditing(p.id);
   };
   var saveAccount = /*#__PURE__*/function () {
-    var _ref73 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee42(platformId, plat) {
-      var _accounts$platformId, fd, cookieData, _t47;
-      return _regenerator().w(function (_context45) {
-        while (1) switch (_context45.p = _context45.n) {
+    var _ref76 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee45(platformId, plat) {
+      var _accounts$platformId, fd, cookieData, _t49;
+      return _regenerator().w(function (_context48) {
+        while (1) switch (_context48.p = _context48.n) {
           case 0:
             setSaving(true);
-            _context45.p = 1;
+            _context48.p = 1;
             fd = editForm;
             cookieData = null;
             if (plat.tokenField === 'cookieData' && fd.cookieData.trim()) {
               try {
                 cookieData = JSON.parse(fd.cookieData);
-              } catch (_unused) {
+              } catch (_unused3) {
                 cookieData = fd.cookieData;
               } // store as string if not valid JSON
             }
-            _context45.n = 2;
+            _context48.n = 2;
             return db.collection('social_accounts').doc(platformId).set({
               platform: platformId,
               connected: true,
@@ -11768,31 +11953,31 @@ var MediaManager = function MediaManager(_ref72) {
           case 2:
             toast.add("".concat(plat.label, " connected!"), 'ok');
             setEditing(null);
-            _context45.n = 4;
+            _context48.n = 4;
             break;
           case 3:
-            _context45.p = 3;
-            _t47 = _context45.v;
-            toast.add('Save failed: ' + _t47.message, 'error');
+            _context48.p = 3;
+            _t49 = _context48.v;
+            toast.add('Save failed: ' + _t49.message, 'error');
           case 4:
             setSaving(false);
           case 5:
-            return _context45.a(2);
+            return _context48.a(2);
         }
-      }, _callee42, null, [[1, 3]]);
+      }, _callee45, null, [[1, 3]]);
     }));
-    return function saveAccount(_x30, _x31) {
-      return _ref73.apply(this, arguments);
+    return function saveAccount(_x33, _x34) {
+      return _ref76.apply(this, arguments);
     };
   }();
   var disconnectAccount = /*#__PURE__*/function () {
-    var _ref74 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee43(platformId, label) {
-      var _t48;
-      return _regenerator().w(function (_context46) {
-        while (1) switch (_context46.p = _context46.n) {
+    var _ref77 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee46(platformId, label) {
+      var _t50;
+      return _regenerator().w(function (_context49) {
+        while (1) switch (_context49.p = _context49.n) {
           case 0:
-            _context46.p = 0;
-            _context46.n = 1;
+            _context49.p = 0;
+            _context49.n = 1;
             return db.collection('social_accounts').doc(platformId).set({
               connected: false,
               accessToken: '',
@@ -11803,19 +11988,19 @@ var MediaManager = function MediaManager(_ref72) {
             });
           case 1:
             toast.add("".concat(label, " disconnected"), 'ok');
-            _context46.n = 3;
+            _context49.n = 3;
             break;
           case 2:
-            _context46.p = 2;
-            _t48 = _context46.v;
-            toast.add('Error: ' + _t48.message, 'error');
+            _context49.p = 2;
+            _t50 = _context49.v;
+            toast.add('Error: ' + _t50.message, 'error');
           case 3:
-            return _context46.a(2);
+            return _context49.a(2);
         }
-      }, _callee43, null, [[0, 2]]);
+      }, _callee46, null, [[0, 2]]);
     }));
-    return function disconnectAccount(_x32, _x33) {
-      return _ref74.apply(this, arguments);
+    return function disconnectAccount(_x35, _x36) {
+      return _ref77.apply(this, arguments);
     };
   }();
   var fmtStatus = function fmtStatus(results, plat) {
@@ -12474,21 +12659,21 @@ var PAGES = [{
 }];
 
 // ── ADMIN LAYOUT ──────────────────────────────────────────────
-var Layout = function Layout(_ref75) {
-  var user = _ref75.user,
-    onLogout = _ref75.onLogout;
-  var _useState231 = useState('dashboard'),
-    _useState232 = _slicedToArray(_useState231, 2),
-    page = _useState232[0],
-    setPage = _useState232[1];
-  var _useState233 = useState(false),
-    _useState234 = _slicedToArray(_useState233, 2),
-    menuOpen = _useState234[0],
-    setMenuOpen = _useState234[1];
-  var _useState235 = useState('all'),
+var Layout = function Layout(_ref78) {
+  var user = _ref78.user,
+    onLogout = _ref78.onLogout;
+  var _useState235 = useState('dashboard'),
     _useState236 = _slicedToArray(_useState235, 2),
-    navCat = _useState236[0],
-    setNavCat = _useState236[1];
+    page = _useState236[0],
+    setPage = _useState236[1];
+  var _useState237 = useState(false),
+    _useState238 = _slicedToArray(_useState237, 2),
+    menuOpen = _useState238[0],
+    setMenuOpen = _useState238[1];
+  var _useState239 = useState('all'),
+    _useState240 = _slicedToArray(_useState239, 2),
+    navCat = _useState240[0],
+    setNavCat = _useState240[1];
   var toast = useToast();
   var pg = PAGES.find(function (p) {
     return p.id === page;
@@ -12920,14 +13105,14 @@ var Layout = function Layout(_ref75) {
 
 // ── ROOT APP ──────────────────────────────────────────────────
 var App = function App() {
-  var _useState237 = useState(null),
-    _useState238 = _slicedToArray(_useState237, 2),
-    user = _useState238[0],
-    setUser = _useState238[1];
-  var _useState239 = useState(true),
-    _useState240 = _slicedToArray(_useState239, 2),
-    checking = _useState240[0],
-    setChecking = _useState240[1];
+  var _useState241 = useState(null),
+    _useState242 = _slicedToArray(_useState241, 2),
+    user = _useState242[0],
+    setUser = _useState242[1];
+  var _useState243 = useState(true),
+    _useState244 = _slicedToArray(_useState243, 2),
+    checking = _useState244[0],
+    setChecking = _useState244[1];
   useEffect(function () {
     var u = auth.onAuthStateChanged(function (u) {
       setUser(u || null);
