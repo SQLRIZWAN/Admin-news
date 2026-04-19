@@ -7278,14 +7278,64 @@ var AutomationPage = function AutomationPage(_ref41) {
       setTesting = _useState152[1];
     var testDb = /*#__PURE__*/function () {
       var _ref49 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee25() {
-        var results, tests, _i4, _tests, t, s, _e$message, _e$message2, indexUrl, _t18;
+        var results, s, withTs, withoutTs, ai, auto, hidden, drafts, cats, _e$message, tests, _i4, _tests, t, _s, _e$message2, _e$message3, indexUrl, _t18, _t19;
         return _regenerator().w(function (_context27) {
           while (1) switch (_context27.p = _context27.n) {
             case 0:
               setTesting(true);
-              results = [];
+              results = []; // 1) TRUE total — no filter, no orderBy, no limit. Reveals the real count
+              //    in Firestore (uncovers docs that orderBy('timestamp') silently drops).
+              _context27.p = 1;
+              _context27.n = 2;
+              return db.collection('news').get({
+                source: 'server'
+              });
+            case 2:
+              s = _context27.v;
+              withTs = 0, withoutTs = 0, ai = 0, auto = 0, hidden = 0, drafts = 0;
+              cats = {};
+              s.docs.forEach(function (d) {
+                var x = d.data();
+                if (x.timestamp) withTs++;else withoutTs++;
+                if (x.aiGenerated) ai++;
+                if (x.autoPosted) auto++;
+                if (x.hidden === true) hidden++;
+                if (x.status === 'draft' || x.published === false && x.aiGenerated === true) drafts++;
+                if (x.category) cats[x.category] = (cats[x.category] || 0) + 1;
+              });
+              results.push({
+                name: "\uD83D\uDD22 Total news in Firestore (server read)",
+                ok: true,
+                count: s.size,
+                detail: "timestamp: ".concat(withTs, " \xB7 missing-timestamp: ").concat(withoutTs, " \xB7 aiGenerated: ").concat(ai, " \xB7 autoPosted: ").concat(auto, " \xB7 hidden: ").concat(hidden, " \xB7 drafts: ").concat(drafts)
+              });
+              results.push({
+                name: "\uD83D\uDCC2 Per-category count",
+                ok: true,
+                count: Object.keys(cats).length,
+                detail: Object.entries(cats).map(function (_ref50) {
+                  var _ref51 = _slicedToArray(_ref50, 2),
+                    k = _ref51[0],
+                    v = _ref51[1];
+                  return "".concat(k, ":").concat(v);
+                }).join(' · ') || '(no category field on any doc)'
+              });
+              _context27.n = 4;
+              break;
+            case 3:
+              _context27.p = 3;
+              _t18 = _context27.v;
+              results.push({
+                name: '🔢 Total news in Firestore',
+                ok: false,
+                count: 0,
+                err: (_e$message = _t18.message) === null || _e$message === void 0 ? void 0 : _e$message.slice(0, 200)
+              });
+            case 4:
+              // 2) Filter-specific probes (these DO use orderBy / where — they show whether
+              //    composite indexes exist and whether the filtered subset is non-empty).
               tests = [{
-                name: 'All news (no filter)',
+                name: 'orderBy timestamp (silent drops if field missing)',
                 fn: function fn() {
                   return db.collection('news').orderBy('timestamp', 'desc').limit(5).get();
                 }
@@ -7300,58 +7350,53 @@ var AutomationPage = function AutomationPage(_ref41) {
                   return db.collection('news').where('published', '==', true).orderBy('timestamp', 'desc').limit(5).get();
                 }
               }, {
-                name: 'isBreaking==true',
-                fn: function fn() {
-                  return db.collection('news').where('isBreaking', '==', true).limit(5).get();
-                }
-              }, {
-                name: 'category+timestamp index',
+                name: 'category==world + timestamp',
                 fn: function fn() {
                   return db.collection('news').where('category', '==', 'world').orderBy('timestamp', 'desc').limit(3).get();
                 }
               }];
               _i4 = 0, _tests = tests;
-            case 1:
+            case 5:
               if (!(_i4 < _tests.length)) {
-                _context27.n = 6;
+                _context27.n = 10;
                 break;
               }
               t = _tests[_i4];
-              _context27.p = 2;
-              _context27.n = 3;
+              _context27.p = 6;
+              _context27.n = 7;
               return t.fn();
-            case 3:
-              s = _context27.v;
+            case 7:
+              _s = _context27.v;
               results.push({
                 name: t.name,
                 ok: true,
-                count: s.size,
+                count: _s.size,
                 err: null
               });
-              _context27.n = 5;
+              _context27.n = 9;
               break;
-            case 4:
-              _context27.p = 4;
-              _t18 = _context27.v;
-              indexUrl = ((_e$message = _t18.message) === null || _e$message === void 0 || (_e$message = _e$message.match(/https:\/\/console\.firebase[^\s]*/)) === null || _e$message === void 0 ? void 0 : _e$message[0]) || null;
+            case 8:
+              _context27.p = 8;
+              _t19 = _context27.v;
+              indexUrl = ((_e$message2 = _t19.message) === null || _e$message2 === void 0 || (_e$message2 = _e$message2.match(/https:\/\/console\.firebase[^\s]*/)) === null || _e$message2 === void 0 ? void 0 : _e$message2[0]) || null;
               results.push({
                 name: t.name,
                 ok: false,
                 count: 0,
-                err: (_e$message2 = _t18.message) === null || _e$message2 === void 0 ? void 0 : _e$message2.slice(0, 120),
+                err: (_e$message3 = _t19.message) === null || _e$message3 === void 0 ? void 0 : _e$message3.slice(0, 120),
                 indexUrl: indexUrl
               });
-            case 5:
+            case 9:
               _i4++;
-              _context27.n = 1;
+              _context27.n = 5;
               break;
-            case 6:
+            case 10:
               setDbStatus(results);
               setTesting(false);
-            case 7:
+            case 11:
               return _context27.a(2);
           }
-        }, _callee25, null, [[2, 4]]);
+        }, _callee25, null, [[6, 8], [1, 3]]);
       }));
       return function testDb() {
         return _ref49.apply(this, arguments);
@@ -7448,7 +7493,15 @@ var AutomationPage = function AutomationPage(_ref41) {
           padding: '2px 7px',
           borderRadius: 99
         }
-      }, r.count, " docs")), !r.ok && /*#__PURE__*/React.createElement("div", {
+      }, r.count, " docs")), r.ok && r.detail && /*#__PURE__*/React.createElement("p", {
+        style: {
+          fontSize: 10,
+          color: 'var(--dim)',
+          marginTop: 4,
+          lineHeight: 1.5,
+          wordBreak: 'break-word'
+        }
+      }, r.detail), !r.ok && /*#__PURE__*/React.createElement("div", {
         style: {
           marginTop: 5
         }
@@ -7573,9 +7626,9 @@ var AutomationPage = function AutomationPage(_ref41) {
 };
 
 // ── SETTINGS ──────────────────────────────────────────────────
-var SettingsPage = function SettingsPage(_ref50) {
-  var user = _ref50.user,
-    toast = _ref50.toast;
+var SettingsPage = function SettingsPage(_ref52) {
+  var user = _ref52.user,
+    toast = _ref52.toast;
   return /*#__PURE__*/React.createElement("div", {
     className: "fade-up"
   }, /*#__PURE__*/React.createElement("div", {
@@ -7677,10 +7730,10 @@ var SettingsPage = function SettingsPage(_ref50) {
       gap: 10,
       marginTop: 14
     }
-  }, [['Project', 'KWT News'], ['Firebase', 'kwt-news'], ['Version', '2.0.0'], ['Build', '2026']].map(function (_ref51) {
-    var _ref52 = _slicedToArray(_ref51, 2),
-      k = _ref52[0],
-      v = _ref52[1];
+  }, [['Project', 'KWT News'], ['Firebase', 'kwt-news'], ['Version', '2.0.0'], ['Build', '2026']].map(function (_ref53) {
+    var _ref54 = _slicedToArray(_ref53, 2),
+      k = _ref54[0],
+      v = _ref54[1];
     return /*#__PURE__*/React.createElement("div", {
       key: k,
       style: {
@@ -7705,8 +7758,8 @@ var SettingsPage = function SettingsPage(_ref50) {
 };
 
 // ── LOGOS MANAGER ────────────────────────────────────────────
-var LogosManager = function LogosManager(_ref53) {
-  var toast = _ref53.toast;
+var LogosManager = function LogosManager(_ref55) {
+  var toast = _ref55.toast;
   var _useState153 = useState([]),
     _useState154 = _slicedToArray(_useState153, 2),
     logos = _useState154[0],
@@ -7789,8 +7842,8 @@ var LogosManager = function LogosManager(_ref53) {
 
   // ── Pixabay gallery search ──────────────────────────────────
   var searchGallery = /*#__PURE__*/function () {
-    var _ref54 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee26() {
-      var _d$hits, r, d, _t19;
+    var _ref56 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee26() {
+      var _d$hits, r, d, _t20;
       return _regenerator().w(function (_context28) {
         while (1) switch (_context28.p = _context28.n) {
           case 0:
@@ -7817,8 +7870,8 @@ var LogosManager = function LogosManager(_ref53) {
             break;
           case 5:
             _context28.p = 5;
-            _t19 = _context28.v;
-            toast.show('Search error: ' + _t19.message, 'error');
+            _t20 = _context28.v;
+            toast.show('Search error: ' + _t20.message, 'error');
           case 6:
             setSearching(false);
           case 7:
@@ -7827,7 +7880,7 @@ var LogosManager = function LogosManager(_ref53) {
       }, _callee26, null, [[2, 5]]);
     }));
     return function searchGallery() {
-      return _ref54.apply(this, arguments);
+      return _ref56.apply(this, arguments);
     };
   }();
   var pickImage = function pickImage(url) {
@@ -7842,9 +7895,9 @@ var LogosManager = function LogosManager(_ref53) {
 
   // ── Phone gallery upload to Cloudinary ──────────────────────
   var handlePhoneFile = /*#__PURE__*/function () {
-    var _ref55 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee27(e) {
+    var _ref57 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee27(e) {
       var _e$target$files;
-      var file, localUrl, fd, res, data, cloudUrl, _t20;
+      var file, localUrl, fd, res, data, cloudUrl, _t21;
       return _regenerator().w(function (_context29) {
         while (1) switch (_context29.p = _context29.n) {
           case 0:
@@ -7893,8 +7946,8 @@ var LogosManager = function LogosManager(_ref53) {
             break;
           case 6:
             _context29.p = 6;
-            _t20 = _context29.v;
-            toast.show('Upload failed: ' + _t20.message, 'error');
+            _t21 = _context29.v;
+            toast.show('Upload failed: ' + _t21.message, 'error');
           case 7:
             setPhoneUploading(false);
             // Reset file input so same file can be re-selected
@@ -7905,12 +7958,12 @@ var LogosManager = function LogosManager(_ref53) {
       }, _callee27, null, [[2, 6]]);
     }));
     return function handlePhoneFile(_x21) {
-      return _ref55.apply(this, arguments);
+      return _ref57.apply(this, arguments);
     };
   }();
   var add = /*#__PURE__*/function () {
-    var _ref56 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee28() {
-      var name, url, _t21;
+    var _ref58 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee28() {
+      var name, url, _t22;
       return _regenerator().w(function (_context30) {
         while (1) switch (_context30.p = _context30.n) {
           case 0:
@@ -7949,8 +8002,8 @@ var LogosManager = function LogosManager(_ref53) {
             break;
           case 5:
             _context30.p = 5;
-            _t21 = _context30.v;
-            toast.show('Error: ' + _t21.message, 'error');
+            _t22 = _context30.v;
+            toast.show('Error: ' + _t22.message, 'error');
           case 6:
             setSaving(false);
           case 7:
@@ -7959,12 +8012,12 @@ var LogosManager = function LogosManager(_ref53) {
       }, _callee28, null, [[3, 5]]);
     }));
     return function add() {
-      return _ref56.apply(this, arguments);
+      return _ref58.apply(this, arguments);
     };
   }();
   var del = /*#__PURE__*/function () {
-    var _ref57 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee29(id, name) {
-      var _t22;
+    var _ref59 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee29(id, name) {
+      var _t23;
       return _regenerator().w(function (_context31) {
         while (1) switch (_context31.p = _context31.n) {
           case 0:
@@ -7983,15 +8036,15 @@ var LogosManager = function LogosManager(_ref53) {
             break;
           case 3:
             _context31.p = 3;
-            _t22 = _context31.v;
-            toast.show('Error: ' + _t22.message, 'error');
+            _t23 = _context31.v;
+            toast.show('Error: ' + _t23.message, 'error');
           case 4:
             return _context31.a(2);
         }
       }, _callee29, null, [[1, 3]]);
     }));
     return function del(_x22, _x23) {
-      return _ref57.apply(this, arguments);
+      return _ref59.apply(this, arguments);
     };
   }();
   var TAB_BTN = function TAB_BTN(id, label) {
@@ -8551,9 +8604,9 @@ var LogosManager = function LogosManager(_ref53) {
 };
 
 // ── CATEGORY MANAGER ─────────────────────────────────────────
-var CategoryManager = function CategoryManager(_ref58) {
-  var toast = _ref58.toast,
-    onNavigate = _ref58.onNavigate;
+var CategoryManager = function CategoryManager(_ref60) {
+  var toast = _ref60.toast,
+    onNavigate = _ref60.onNavigate;
   var _useState175 = useState({}),
     _useState176 = _slicedToArray(_useState175, 2),
     counts = _useState176[0],
@@ -9039,8 +9092,8 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── CATEGORY BADGE (appears at 0.3s) ──────────────────
         if (sec > 0.3) {
-          var _t23 = easeOut((sec - 0.3) / 0.4);
-          ctx.globalAlpha = _t23;
+          var _t24 = easeOut((sec - 0.3) / 0.4);
+          ctx.globalAlpha = _t24;
           ctx.fillStyle = accent;
           ctx.beginPath();
           ctx.roundRect(22, 80, 200, 30, 6);
@@ -9062,7 +9115,7 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── HEADLINE (slides from left at 0.6s) ───────────────
         if (sec > 0.6) {
-          var _t24 = easeOut((sec - 0.6) / 0.6);
+          var _t25 = easeOut((sec - 0.6) / 0.6);
           ctx.save();
           ctx.beginPath();
           ctx.rect(0, 115, W * 0.54 + 30, H - 115 - 48);
@@ -9091,16 +9144,16 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── ACCENT LINE LEFT (animates at 1.2s) ───────────────
         if (sec > 1.2) {
-          var _t25 = easeOut((sec - 1.2) / 0.4);
-          var lineH = lerp(0, Math.min(titleLines.length * 64 + 10, H - 250), _t25);
+          var _t26 = easeOut((sec - 1.2) / 0.4);
+          var lineH = lerp(0, Math.min(titleLines.length * 64 + 10, H - 250), _t26);
           ctx.fillStyle = accent;
           ctx.fillRect(8, 165 - 40, 4, lineH);
         }
 
         // ─── SUMMARY (fades in at 4.5s) ────────────────────────
         if (sec > 4.2 && summary) {
-          var _t26 = easeOut((sec - 4.2) / 0.8);
-          ctx.globalAlpha = _t26;
+          var _t27 = easeOut((sec - 4.2) / 0.8);
+          ctx.globalAlpha = _t27;
           // Subtle separator
           ctx.fillStyle = 'rgba(255,255,255,0.12)';
           ctx.fillRect(22, titleLines.length * 64 + 165 - 20, W * 0.52 - 44, 1);
@@ -9115,8 +9168,8 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
         // ─── LOWER-THIRD (slides up at 3s) ─────────────────────
         if (sec > 2.8) {
-          var _t27 = easeOut((sec - 2.8) / 0.5);
-          var ltY = lerp(H, H - 170, _t27);
+          var _t28 = easeOut((sec - 2.8) / 0.5);
+          var ltY = lerp(H, H - 170, _t28);
           ctx.fillStyle = 'rgba(5,12,24,0.94)';
           ctx.fillRect(0, ltY, W * 0.54, 90);
           ctx.fillStyle = accent;
@@ -9212,7 +9265,7 @@ var makeNewsVideo = function makeNewsVideo(article) {
 
 // ── Voice + Multi-Image Documentary News Video ───────────────
 var makeNewsVideoWithVoice = /*#__PURE__*/function () {
-  var _ref59 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee30(article) {
+  var _ref61 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee30(article) {
     var durSecs,
       script,
       audioEl,
@@ -9233,7 +9286,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
       logoImg,
       imgs,
       _args33 = arguments,
-      _t31;
+      _t32;
     return _regenerator().w(function (_context33) {
       while (1) switch (_context33.p = _context33.n) {
         case 0:
@@ -9245,7 +9298,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
           ttsText = script.slice(0, 500); // Try multiple TTS endpoints for reliability
           ttsUrls = ['https://text.pollinations.ai/' + encodeURIComponent(ttsText) + '?model=openai-audio&voice=alloy&seed=1', 'https://text.pollinations.ai/' + encodeURIComponent(ttsText) + '?model=openai-audio&voice=nova&seed=42'];
           _loop3 = /*#__PURE__*/_regenerator().m(function _loop3() {
-            var ttsUrl, resp, buf, testEl, canPlay, audioDur, capStream, _t28;
+            var ttsUrl, resp, buf, testEl, canPlay, audioDur, capStream, _t29;
             return _regenerator().w(function (_context32) {
               while (1) switch (_context32.p = _context32.n) {
                 case 0:
@@ -9327,7 +9380,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
                   break;
                 case 9:
                   _context32.p = 9;
-                  _t28 = _context32.v;
+                  _t29 = _context32.v;
                   if (audioBlobUrl) {
                     URL.revokeObjectURL(audioBlobUrl);
                     audioBlobUrl = null;
@@ -9366,7 +9419,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
           break;
         case 7:
           _context33.p = 7;
-          _t31 = _context33.v;
+          _t32 = _context33.v;
         case 8:
           // ── Preload all images (deduplicated) ─────────────────────────
           seenUrls = new Set();
@@ -9681,8 +9734,8 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
 
               // Summary text (documentary info panel)
               if (sec > 3.5 && summary) {
-                var _t29 = easeOut((sec - 3.5) / 0.9);
-                ctx.globalAlpha = _t29 * 0.9;
+                var _t30 = easeOut((sec - 3.5) / 0.9);
+                ctx.globalAlpha = _t30 * 0.9;
                 // Subtle separator line
                 var sepG = ctx.createLinearGradient(22, 0, W * 0.52 - 20, 0);
                 sepG.addColorStop(0, accent);
@@ -9750,8 +9803,8 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
 
               // Lower third — source + branding
               if (sec > 2.5) {
-                var _t30 = easeOut((sec - 2.5) / 0.6),
-                  ltY = lerp(H + 50, H - 175, _t30);
+                var _t31 = easeOut((sec - 2.5) / 0.6),
+                  ltY = lerp(H + 50, H - 175, _t31);
                 // Panel background with gradient
                 var ltGrad = ctx.createLinearGradient(0, ltY, W * 0.56, ltY);
                 ltGrad.addColorStop(0, 'rgba(3,8,18,0.97)');
@@ -9828,7 +9881,7 @@ var makeNewsVideoWithVoice = /*#__PURE__*/function () {
     }, _callee30, null, [[1, 7]]);
   }));
   return function makeNewsVideoWithVoice(_x24) {
-    return _ref59.apply(this, arguments);
+    return _ref61.apply(this, arguments);
   };
 }();
 
@@ -9869,8 +9922,8 @@ var shortSourceName = function shortSourceName(name) {
 // Module-level logo cache to avoid repeated full-collection reads
 var _logoCache = new Map();
 var getOrCreateSourceLogo = /*#__PURE__*/function () {
-  var _ref60 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee31(sourceName) {
-    var cacheKey, snap, lower, found, domain, url, ok, _short, q, genUrl, _short2, _t32, _t33, _t34;
+  var _ref62 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee31(sourceName) {
+    var cacheKey, snap, lower, found, domain, url, ok, _short, q, genUrl, _short2, _t33, _t34, _t35;
     return _regenerator().w(function (_context34) {
       while (1) switch (_context34.p = _context34.n) {
         case 0:
@@ -9907,7 +9960,7 @@ var getOrCreateSourceLogo = /*#__PURE__*/function () {
           break;
         case 4:
           _context34.p = 4;
-          _t32 = _context34.v;
+          _t33 = _context34.v;
         case 5:
           // 2. Try Clearbit
           domain = guessSourceDomain(sourceName);
@@ -9947,7 +10000,7 @@ var getOrCreateSourceLogo = /*#__PURE__*/function () {
           break;
         case 9:
           _context34.p = 9;
-          _t33 = _context34.v;
+          _t34 = _context34.v;
         case 10:
           return _context34.a(2, url);
         case 11:
@@ -9968,19 +10021,19 @@ var getOrCreateSourceLogo = /*#__PURE__*/function () {
           break;
         case 14:
           _context34.p = 14;
-          _t34 = _context34.v;
+          _t35 = _context34.v;
         case 15:
           return _context34.a(2, genUrl);
       }
     }, _callee31, null, [[12, 14], [7, 9], [1, 4]]);
   }));
   return function getOrCreateSourceLogo(_x25) {
-    return _ref60.apply(this, arguments);
+    return _ref62.apply(this, arguments);
   };
 }();
-var AINewsManager = function AINewsManager(_ref61) {
-  var toast = _ref61.toast,
-    onBack = _ref61.onBack;
+var AINewsManager = function AINewsManager(_ref63) {
+  var toast = _ref63.toast,
+    onBack = _ref63.onBack;
   var _useState179 = useState('chat'),
     _useState180 = _slicedToArray(_useState179, 2),
     tab = _useState180[0],
@@ -10066,7 +10119,7 @@ var AINewsManager = function AINewsManager(_ref61) {
 
   // ── Video generation ──────────────────────────────────────────
   var uploadVideoBlob = /*#__PURE__*/function () {
-    var _ref62 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee32(blob) {
+    var _ref64 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee32(blob) {
       var fd, res, data;
       return _regenerator().w(function (_context35) {
         while (1) switch (_context35.n) {
@@ -10098,12 +10151,12 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee32);
     }));
     return function uploadVideoBlob(_x26) {
-      return _ref62.apply(this, arguments);
+      return _ref64.apply(this, arguments);
     };
   }();
   var genVideo = /*#__PURE__*/function () {
-    var _ref63 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee33(article) {
-      var prog, result, _t35;
+    var _ref65 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee33(article) {
+      var prog, result, _t36;
       return _regenerator().w(function (_context36) {
         while (1) switch (_context36.p = _context36.n) {
           case 0:
@@ -10141,10 +10194,10 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 4:
             _context36.p = 4;
-            _t35 = _context36.v;
+            _t36 = _context36.v;
             clearInterval(videoTimerRef.current);
             setVideoStatus('');
-            toast.add('Video error: ' + _t35.message, 'error');
+            toast.add('Video error: ' + _t36.message, 'error');
           case 5:
             setVideoBusy(false);
           case 6:
@@ -10153,7 +10206,7 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee33, null, [[2, 4]]);
     }));
     return function genVideo(_x27) {
-      return _ref63.apply(this, arguments);
+      return _ref65.apply(this, arguments);
     };
   }();
   var downloadVideo = function downloadVideo() {
@@ -10181,8 +10234,8 @@ var AINewsManager = function AINewsManager(_ref61) {
     });
   };
   var saveDraftEdit = /*#__PURE__*/function () {
-    var _ref64 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee34() {
-      var _t36;
+    var _ref66 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee34() {
+      var _t37;
       return _regenerator().w(function (_context37) {
         while (1) switch (_context37.p = _context37.n) {
           case 0:
@@ -10204,7 +10257,7 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 4:
             _context37.p = 4;
-            _t36 = _context37.v;
+            _t37 = _context37.v;
             toast.add('Update failed', 'error');
           case 5:
             setDraftSaving(false);
@@ -10214,7 +10267,7 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee34, null, [[2, 4]]);
     }));
     return function saveDraftEdit() {
-      return _ref64.apply(this, arguments);
+      return _ref66.apply(this, arguments);
     };
   }();
   useEffect(function () {
@@ -10227,8 +10280,8 @@ var AINewsManager = function AINewsManager(_ref61) {
     });
   }, [msgs]);
   var fetchDrafts = /*#__PURE__*/function () {
-    var _ref65 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee35() {
-      var snap, docs, _t37;
+    var _ref67 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee35() {
+      var snap, docs, _t38;
       return _regenerator().w(function (_context38) {
         while (1) switch (_context38.p = _context38.n) {
           case 0:
@@ -10252,8 +10305,8 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 3:
             _context38.p = 3;
-            _t37 = _context38.v;
-            console.error(_t37);
+            _t38 = _context38.v;
+            console.error(_t38);
           case 4:
             setDraftsLoading(false);
           case 5:
@@ -10262,15 +10315,15 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee35, null, [[1, 3]]);
     }));
     return function fetchDrafts() {
-      return _ref65.apply(this, arguments);
+      return _ref67.apply(this, arguments);
     };
   }();
   var getImg = /*#__PURE__*/function () {
-    var _ref66 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee36(query) {
+    var _ref68 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee36(query) {
       var forceAI,
         u,
         _args39 = arguments,
-        _t38;
+        _t39;
       return _regenerator().w(function (_context39) {
         while (1) switch (_context39.p = _context39.n) {
           case 0:
@@ -10294,18 +10347,18 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 4:
             _context39.p = 4;
-            _t38 = _context39.v;
+            _t39 = _context39.v;
           case 5:
             return _context39.a(2, pollinationsUrl(query));
         }
       }, _callee36, null, [[1, 4]]);
     }));
     return function getImg(_x28) {
-      return _ref66.apply(this, arguments);
+      return _ref68.apply(this, arguments);
     };
   }();
   var saveDraft = /*#__PURE__*/function () {
-    var _ref67 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee37(article) {
+    var _ref69 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee37(article) {
       var isVideo;
       return _regenerator().w(function (_context40) {
         while (1) switch (_context40.n) {
@@ -10338,14 +10391,14 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee37);
     }));
     return function saveDraft(_x29) {
-      return _ref67.apply(this, arguments);
+      return _ref69.apply(this, arguments);
     };
   }();
 
   // ── Chat ─────────────────────────────────────────────
   var sendChat = /*#__PURE__*/function () {
-    var _ref68 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee38() {
-      var userText, isArticleReq, prompt, responseText, parsed, replyText, article, _t39;
+    var _ref70 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee38() {
+      var userText, isArticleReq, prompt, responseText, parsed, replyText, article, _t40;
       return _regenerator().w(function (_context41) {
         while (1) switch (_context41.p = _context41.n) {
           case 0:
@@ -10385,11 +10438,11 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 4:
             _context41.p = 4;
-            _t39 = _context41.v;
+            _t40 = _context41.v;
             setMsgs(function (p) {
               return [].concat(_toConsumableArray(p), [{
                 role: 'ai',
-                text: 'Sorry, error: ' + _t39.message + '. Please try again.'
+                text: 'Sorry, error: ' + _t40.message + '. Please try again.'
               }]);
             });
           case 5:
@@ -10400,12 +10453,12 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee38, null, [[2, 4]]);
     }));
     return function sendChat() {
-      return _ref68.apply(this, arguments);
+      return _ref70.apply(this, arguments);
     };
   }();
   var saveChatDraft = /*#__PURE__*/function () {
-    var _ref69 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee39(article) {
-      var sourceLogo, src, titleWords, _yield$Promise$all3, _yield$Promise$all4, img1, img2, img3, seenImgUrls, extraImages, fullArticle, docRef, prog, videoUrl, result, _t40, _t41, _t42, _t43;
+    var _ref71 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee39(article) {
+      var sourceLogo, src, titleWords, _yield$Promise$all3, _yield$Promise$all4, img1, img2, img3, seenImgUrls, extraImages, fullArticle, docRef, prog, videoUrl, result, _t41, _t42, _t43, _t44;
       return _regenerator().w(function (_context42) {
         while (1) switch (_context42.p = _context42.n) {
           case 0:
@@ -10433,7 +10486,7 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 5:
             _context42.p = 5;
-            _t40 = _context42.v;
+            _t41 = _context42.v;
           case 6:
             // 2. Fetch distinct background images for video transitions (deduplicated)
             setVideoStatus('image');
@@ -10496,8 +10549,8 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 10:
             _context42.p = 10;
-            _t41 = _context42.v;
-            throw new Error('Draft save failed: ' + _t41.message);
+            _t42 = _context42.v;
+            throw new Error('Draft save failed: ' + _t42.message);
           case 11:
             // 4. Render video with voice-over
             setVideoStatus('rendering');
@@ -10552,7 +10605,7 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 16:
             _context42.p = 16;
-            _t42 = _context42.v;
+            _t43 = _context42.v;
             clearInterval(videoTimerRef.current);
             // Video failed but text draft already saved — still show success
             setVideoStatus('');
@@ -10570,25 +10623,25 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 18:
             _context42.p = 18;
-            _t43 = _context42.v;
+            _t44 = _context42.v;
             clearInterval(videoTimerRef.current);
             setVideoStatus('');
             setVideoBusy(false);
-            toast.add('Failed: ' + _t43.message, 'error');
+            toast.add('Failed: ' + _t44.message, 'error');
           case 19:
             return _context42.a(2);
         }
       }, _callee39, null, [[12, 16], [8, 10], [3, 5], [2, 18]]);
     }));
     return function saveChatDraft(_x30) {
-      return _ref69.apply(this, arguments);
+      return _ref71.apply(this, arguments);
     };
   }();
 
   // ── Auto Generate ─────────────────────────────────────
   var generate = /*#__PURE__*/function () {
-    var _ref70 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee40() {
-      var catInfo, topicPart, prompt, text, article, imageUrl, _t44;
+    var _ref72 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee40() {
+      var catInfo, topicPart, prompt, text, article, imageUrl, _t45;
       return _regenerator().w(function (_context43) {
         while (1) switch (_context43.p = _context43.n) {
           case 0:
@@ -10628,8 +10681,8 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 6:
             _context43.p = 6;
-            _t44 = _context43.v;
-            toast.add('Error: ' + _t44.message, 'error');
+            _t45 = _context43.v;
+            toast.add('Error: ' + _t45.message, 'error');
           case 7:
             setGenBusy(false);
           case 8:
@@ -10638,12 +10691,12 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee40, null, [[2, 6]]);
     }));
     return function generate() {
-      return _ref70.apply(this, arguments);
+      return _ref72.apply(this, arguments);
     };
   }();
   var savePreview = /*#__PURE__*/function () {
-    var _ref71 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee41() {
-      var _t45;
+    var _ref73 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee41() {
+      var _t46;
       return _regenerator().w(function (_context44) {
         while (1) switch (_context44.p = _context44.n) {
           case 0:
@@ -10663,7 +10716,7 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 3:
             _context44.p = 3;
-            _t45 = _context44.v;
+            _t46 = _context44.v;
             toast.add('Save failed', 'error');
           case 4:
             return _context44.a(2);
@@ -10671,12 +10724,12 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee41, null, [[1, 3]]);
     }));
     return function savePreview() {
-      return _ref71.apply(this, arguments);
+      return _ref73.apply(this, arguments);
     };
   }();
   var regenImage = /*#__PURE__*/function () {
-    var _ref72 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee42() {
-      var imageUrl, _t46;
+    var _ref74 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee42() {
+      var imageUrl, _t47;
       return _regenerator().w(function (_context45) {
         while (1) switch (_context45.p = _context45.n) {
           case 0:
@@ -10701,7 +10754,7 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 3:
             _context45.p = 3;
-            _t46 = _context45.v;
+            _t47 = _context45.v;
             toast.add('Image failed', 'error');
           case 4:
             return _context45.a(2);
@@ -10709,14 +10762,14 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee42, null, [[1, 3]]);
     }));
     return function regenImage() {
-      return _ref72.apply(this, arguments);
+      return _ref74.apply(this, arguments);
     };
   }();
 
   // ── Drafts ───────────────────────────────────────────
   var publishDraft = /*#__PURE__*/function () {
-    var _ref73 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee43(id) {
-      var _t47;
+    var _ref75 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee43(id) {
+      var _t48;
       return _regenerator().w(function (_context46) {
         while (1) switch (_context46.p = _context46.n) {
           case 0:
@@ -10735,7 +10788,7 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 3:
             _context46.p = 3;
-            _t47 = _context46.v;
+            _t48 = _context46.v;
             toast.add('Publish failed', 'error');
           case 4:
             setActionId(null);
@@ -10745,12 +10798,12 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee43, null, [[1, 3]]);
     }));
     return function publishDraft(_x31) {
-      return _ref73.apply(this, arguments);
+      return _ref75.apply(this, arguments);
     };
   }();
   var delDraft = /*#__PURE__*/function () {
-    var _ref74 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee44(id) {
-      var _t48;
+    var _ref76 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee44(id) {
+      var _t49;
       return _regenerator().w(function (_context47) {
         while (1) switch (_context47.p = _context47.n) {
           case 0:
@@ -10769,7 +10822,7 @@ var AINewsManager = function AINewsManager(_ref61) {
             break;
           case 3:
             _context47.p = 3;
-            _t48 = _context47.v;
+            _t49 = _context47.v;
             toast.add('Delete failed', 'error');
           case 4:
             setActionId(null);
@@ -10779,7 +10832,7 @@ var AINewsManager = function AINewsManager(_ref61) {
       }, _callee44, null, [[1, 3]]);
     }));
     return function delDraft(_x32) {
-      return _ref74.apply(this, arguments);
+      return _ref76.apply(this, arguments);
     };
   }();
   var tbStyle = function tbStyle(t) {
@@ -11711,8 +11764,8 @@ var AINewsManager = function AINewsManager(_ref61) {
 };
 
 // ── MEDIA MANAGER (Social Media Hub) ─────────────────────────
-var MediaManager = function MediaManager(_ref75) {
-  var toast = _ref75.toast;
+var MediaManager = function MediaManager(_ref77) {
+  var toast = _ref77.toast;
   var PLATFORMS = [{
     id: 'instagram',
     label: 'Instagram',
@@ -11941,8 +11994,8 @@ var MediaManager = function MediaManager(_ref75) {
     setEditing(p.id);
   };
   var saveAccount = /*#__PURE__*/function () {
-    var _ref76 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee45(platformId, plat) {
-      var _accounts$platformId, fd, cookieData, _t49;
+    var _ref78 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee45(platformId, plat) {
+      var _accounts$platformId, fd, cookieData, _t50;
       return _regenerator().w(function (_context48) {
         while (1) switch (_context48.p = _context48.n) {
           case 0:
@@ -11978,8 +12031,8 @@ var MediaManager = function MediaManager(_ref75) {
             break;
           case 3:
             _context48.p = 3;
-            _t49 = _context48.v;
-            toast.add('Save failed: ' + _t49.message, 'error');
+            _t50 = _context48.v;
+            toast.add('Save failed: ' + _t50.message, 'error');
           case 4:
             setSaving(false);
           case 5:
@@ -11988,12 +12041,12 @@ var MediaManager = function MediaManager(_ref75) {
       }, _callee45, null, [[1, 3]]);
     }));
     return function saveAccount(_x33, _x34) {
-      return _ref76.apply(this, arguments);
+      return _ref78.apply(this, arguments);
     };
   }();
   var disconnectAccount = /*#__PURE__*/function () {
-    var _ref77 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee46(platformId, label) {
-      var _t50;
+    var _ref79 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee46(platformId, label) {
+      var _t51;
       return _regenerator().w(function (_context49) {
         while (1) switch (_context49.p = _context49.n) {
           case 0:
@@ -12013,15 +12066,15 @@ var MediaManager = function MediaManager(_ref75) {
             break;
           case 2:
             _context49.p = 2;
-            _t50 = _context49.v;
-            toast.add('Error: ' + _t50.message, 'error');
+            _t51 = _context49.v;
+            toast.add('Error: ' + _t51.message, 'error');
           case 3:
             return _context49.a(2);
         }
       }, _callee46, null, [[0, 2]]);
     }));
     return function disconnectAccount(_x35, _x36) {
-      return _ref77.apply(this, arguments);
+      return _ref79.apply(this, arguments);
     };
   }();
   var fmtStatus = function fmtStatus(results, plat) {
@@ -12680,9 +12733,9 @@ var PAGES = [{
 }];
 
 // ── ADMIN LAYOUT ──────────────────────────────────────────────
-var Layout = function Layout(_ref78) {
-  var user = _ref78.user,
-    onLogout = _ref78.onLogout;
+var Layout = function Layout(_ref80) {
+  var user = _ref80.user,
+    onLogout = _ref80.onLogout;
   var _useState235 = useState('dashboard'),
     _useState236 = _slicedToArray(_useState235, 2),
     page = _useState236[0],
