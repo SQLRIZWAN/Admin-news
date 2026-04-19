@@ -20,6 +20,17 @@ try{
   db.enablePersistence({synchronizeTabs:true}).catch(err=>console.warn('[Firestore] persistence:',err?.code||err));
 }catch(e){ console.warn('[Firestore] persistence threw:',e); }
 
+// Best-effort epoch (seconds) from whatever date-ish field a doc has. Used for
+// client-side newest-first sort so docs without `timestamp` still appear.
+window.__docTime = (n)=>{
+  const t = n && (n.timestamp||n.createdAt||n.publishedAt||n.date||n.time||n.updatedAt);
+  if(!t) return 0;
+  if(typeof t==='object' && typeof t.seconds==='number') return t.seconds;
+  if(typeof t==='number') return t>1e12? Math.floor(t/1000): t;
+  const s=new Date(t).getTime();
+  return isNaN(s)? 0: Math.floor(s/1000);
+};
+
 const CLOUDINARY = { cloudName:'debp1kjtm', uploadPreset:'sql_admin', folder:'sql_users', uploadUrl:'https://api.cloudinary.com/v1_1/debp1kjtm/auto/upload' };
 
 // ── Cloudinary asset delete ───────────────────────────────────
@@ -530,18 +541,20 @@ const Dashboard = () => {
 
   useEffect(()=>{
     const u=[]; const t0=Date.now();
-    // Single ordered listener: computes counts + breaking + recent from one query
-    u.push(db.collection('news').orderBy('timestamp','desc').limit(100).onSnapshot(s=>{
+    // Unordered fetch + client sort — includes docs missing the `timestamp` field.
+    u.push(db.collection('news').limit(500).onSnapshot(s=>{
+      const docs = s.docs.map(d=>({id:d.id,...d.data()}))
+                         .sort((a,b)=> window.__docTime(b) - window.__docTime(a));
       const cc={}; let brk=0;
-      s.docs.forEach(d=>{ const dt=d.data(); if(dt.category) cc[dt.category]=(cc[dt.category]||0)+1; if(dt.isBreaking) brk++; });
-      const rec = s.docs.slice(0,6).map(d=>({id:d.id,...d.data()}));
+      docs.forEach(dt=>{ if(dt.category) cc[dt.category]=(cc[dt.category]||0)+1; if(dt.isBreaking) brk++; });
+      const rec = docs.slice(0,6);
       window.__newsCache.catCounts = cc;
       window.__newsCache.dashRecent = rec;
-      window.__newsCache.stats = {...(window.__newsCache.stats||{}), news:s.size, breaking:brk};
+      window.__newsCache.stats = {...(window.__newsCache.stats||{}), news:docs.length, breaking:brk};
       window.__newsCache.ts = Date.now();
       setCatCounts(cc);
       setRecent(rec);
-      setStats(p=>({...p,news:s.size,breaking:brk}));
+      setStats(p=>({...p,news:docs.length,breaking:brk}));
       const elapsed = Date.now()-t0;
       setTimeout(()=>setLoading(false), Math.max(0, 150-elapsed));
     },()=>{ setTimeout(()=>setLoading(false), 150); }));
@@ -1045,29 +1058,22 @@ const NewsManager = ({toast, initCat='all'}) => {
   const [cat,setCat] = useState(initCat);
   const [statusFilter,setStatusFilter] = useState('all'); // 'published' | 'draft' | 'all'
   const [videoPlayId,setVideoPlayId] = useState(null); // which article video is playing
-  const [displayCount,setDisplayCount] = useState(200); // virtual cap for large lists
+  const [displayCount,setDisplayCount] = useState(500); // virtual cap for large lists
   const searchDebounceRef = useRef(null);
 
   useEffect(()=>{
     const t0 = Date.now();
     const finishLoading = ()=>{ setTimeout(()=>setLoading(false), Math.max(0, 150-(Date.now()-t0))); };
-    // Try ordered query first; if Firestore index missing, fallback to unordered
-    let u = db.collection('news').orderBy('timestamp','desc').limit(100).onSnapshot(
+    // Unordered fetch + client sort — surfaces docs missing the `timestamp` field
+    // (orderBy silently omits them). Works without any composite index.
+    const u = db.collection('news').limit(500).onSnapshot(
       s=>{
-        const docs = s.docs.map(d=>({id:d.id,...d.data()}));
+        const docs = s.docs.map(d=>({id:d.id,...d.data()}))
+                           .sort((a,b)=> window.__docTime(b) - window.__docTime(a));
         window.__newsCache.list = docs; window.__newsCache.ts = Date.now();
         setNews(docs); finishLoading();
       },
-      _err=>{ // Fallback: unordered query (no index needed)
-        u = db.collection('news').limit(100).onSnapshot(
-          s=>{
-            const docs = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.timestamp?.seconds||0)-(a.timestamp?.seconds||0));
-            window.__newsCache.list = docs; window.__newsCache.ts = Date.now();
-            setNews(docs); finishLoading();
-          },
-          ()=>finishLoading()
-        );
-      }
+      err=>{ console.warn('[news] snapshot error:', err?.code||err); finishLoading(); }
     );
     return ()=>u();
   },[]);
@@ -1134,6 +1140,7 @@ const NewsManager = ({toast, initCat='all'}) => {
           <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>News</h1>
           <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>
             {news.filter(n=>!(n.hidden===true||n.status==='draft'||(n.published===false&&n.aiGenerated===true))).length} published · {news.filter(n=>n.hidden===true||n.status==='draft'||(n.published===false&&n.aiGenerated===true)).length} drafts
+            <span style={{fontSize:10,color:'var(--dim)',marginLeft:8}}>raw: {news.length} · proj: {firebase.app().options.projectId}</span>
           </p>
         </div>
         <button className="btn btn-accent" style={{padding:'11px 20px',gap:8,fontSize:14}} onClick={openAdd}>
