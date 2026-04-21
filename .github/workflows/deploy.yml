@@ -71,6 +71,80 @@ jobs:
           echo "SA_CLIENT_EMAIL=$CLIENT_EMAIL" >> "$GITHUB_ENV"
           echo "   Service account: $CLIENT_EMAIL"
 
+      - name: Best-effort IAM self-elevation (tries to grant missing Firebase Admin role)
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          # Tries once to add roles/firebase.admin to the SA. Requires the SA
+          # to have IAM admin or Owner — most SAs don't, in which case the
+          # PATCH returns 403 and we fall back to a clear manual-fix message
+          # from the deploy step. Cheap to attempt, safe to fail.
+          python3 - <<'PYEOF'
+          import json, os, sys, subprocess, urllib.request, urllib.error
+          sa = json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT'])
+          email = sa['client_email']
+          project = 'kwt-news'
+          # Mint an access token via gcloud-auth-style JWT exchange.
+          import base64, time, hmac, hashlib
+          def b64(b): return base64.urlsafe_b64encode(b).rstrip(b'=')
+          now = int(time.time())
+          header = b64(json.dumps({"alg":"RS256","typ":"JWT"}).encode())
+          claims = b64(json.dumps({
+              "iss": email,
+              "scope": "https://www.googleapis.com/auth/cloud-platform",
+              "aud": "https://oauth2.googleapis.com/token",
+              "exp": now+3600, "iat": now,
+          }).encode())
+          signing_input = header + b'.' + claims
+          # Use openssl to sign (avoids extra deps).
+          key_path = '/tmp/sa_key.pem'
+          open(key_path,'w').write(sa['private_key'])
+          sig = subprocess.check_output(['openssl','dgst','-sha256','-sign',key_path], input=signing_input)
+          jwt = signing_input + b'.' + b64(sig)
+          import urllib.parse
+          r = urllib.request.urlopen('https://oauth2.googleapis.com/token',
+              data=urllib.parse.urlencode({
+                  'grant_type':'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                  'assertion': jwt.decode()}).encode())
+          token = json.loads(r.read())['access_token']
+          H = {'Authorization': f'Bearer {token}', 'Content-Type':'application/json'}
+          # Read current IAM policy.
+          req = urllib.request.Request(
+              f'https://cloudresourcemanager.googleapis.com/v1/projects/{project}:getIamPolicy',
+              data=b'{}', headers=H)
+          try:
+              policy = json.loads(urllib.request.urlopen(req).read())
+          except urllib.error.HTTPError as e:
+              print(f'getIamPolicy → {e.code}: {e.read().decode()[:300]}')
+              print('SA cannot read IAM policy. Manual fix required — see deploy step output.')
+              sys.exit(0)
+          member = f'serviceAccount:{email}'
+          want = 'roles/firebase.admin'
+          bindings = policy.setdefault('bindings', [])
+          for b in bindings:
+              if b['role'] == want and member in b.get('members', []):
+                  print(f'✓ SA already has {want}. Nothing to do.')
+                  sys.exit(0)
+          for b in bindings:
+              if b['role'] == want:
+                  b.setdefault('members', []).append(member)
+                  break
+          else:
+              bindings.append({'role': want, 'members': [member]})
+          # PATCH.
+          payload = json.dumps({'policy': policy}).encode()
+          req2 = urllib.request.Request(
+              f'https://cloudresourcemanager.googleapis.com/v1/projects/{project}:setIamPolicy',
+              data=payload, headers=H, method='POST')
+          try:
+              urllib.request.urlopen(req2)
+              print(f'✓ Granted {want} to {email} — zero-click from now on.')
+          except urllib.error.HTTPError as e:
+              print(f'setIamPolicy → {e.code}: {e.read().decode()[:300]}')
+              print('SA lacks IAM admin. Deploy step will surface the one-time manual fix.')
+          PYEOF
+
       - name: Pre-flight — verify SA can read the project
         run: |
           set +e
