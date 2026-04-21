@@ -113,30 +113,83 @@ jobs:
           echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
           echo "→ firebase deploy $FLAGS"
 
-      - name: Firebase deploy
+      - name: Firebase deploy — indexes
+        id: deploy_indexes
+        if: contains(steps.target.outputs.flags, 'firestore:indexes') || contains(steps.target.outputs.flags, 'all')
+        continue-on-error: true
         run: |
-          set +e
-          npx --yes firebase-tools@13 deploy \
-            ${{ steps.target.outputs.flags }} \
-            --project kwt-news \
-            --non-interactive \
-            --force 2>&1 | tee "$RUNNER_TEMP/deploy.log"
-          RC=${PIPESTATUS[0]}
-          set -e
-          if [ $RC -ne 0 ]; then
-            if grep -qiE "permission.denied|forbidden|403|insufficient|iam" "$RUNNER_TEMP/deploy.log"; then
+          set -o pipefail
+          npx --yes firebase-tools@13 deploy --only firestore:indexes \
+            --project kwt-news --non-interactive --force --debug \
+            2>&1 | tee "$RUNNER_TEMP/deploy-indexes.log"
+
+      - name: Firebase deploy — rules
+        id: deploy_rules
+        if: contains(steps.target.outputs.flags, 'firestore:rules') || contains(steps.target.outputs.flags, 'all')
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npx --yes firebase-tools@13 deploy --only firestore:rules \
+            --project kwt-news --non-interactive --force --debug \
+            2>&1 | tee "$RUNNER_TEMP/deploy-rules.log"
+
+      - name: Firebase deploy — hosting
+        id: deploy_hosting
+        if: contains(steps.target.outputs.flags, 'hosting') || contains(steps.target.outputs.flags, 'all')
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npx --yes firebase-tools@13 deploy --only hosting \
+            --project kwt-news --non-interactive --force --debug \
+            2>&1 | tee "$RUNNER_TEMP/deploy-hosting.log"
+
+      - name: Post failure diagnostics as commit comment
+        if: steps.deploy_indexes.outcome == 'failure' || steps.deploy_rules.outcome == 'failure' || steps.deploy_hosting.outcome == 'failure'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          BODY="/tmp/comment.md"
+          {
+            echo "## ❌ Deploy failed — diagnostics"
+            echo ""
+            echo "SA: \`$SA_CLIENT_EMAIL\`"
+            echo ""
+            for target in indexes rules hosting; do
+              OUT="$RUNNER_TEMP/deploy-$target.log"
+              OUTCOME_VAR=$(echo "deploy_$target" | tr '[:lower:]' '[:upper:]')
+              [ -f "$OUT" ] || continue
+              echo "### $target"
+              echo '```'
+              tail -c 6000 "$OUT" | sed 's/\x1b\[[0-9;]*m//g'
+              echo '```'
               echo ""
-              echo "❌ Deploy failed with a permissions error."
-              echo "   The service account '$SA_CLIENT_EMAIL' is missing one or more IAM roles."
-              echo "   Open GCP IAM and grant the roles below — one-time, ~2 min:"
-              echo "     https://console.cloud.google.com/iam-admin/iam?project=kwt-news"
-              echo "   Required roles (any of these sets works):"
-              echo "     • Firebase Admin       ← simplest, grants everything needed"
-              echo "     • OR: Cloud Datastore Index Admin + Firebase Rules Admin + Firebase Hosting Admin"
-              echo "   After granting, re-run this workflow — no code change needed."
-            fi
-            exit $RC
-          fi
+            done
+            echo ""
+            echo "If you see **PERMISSION_DENIED / 403** → grant role **Firebase Admin** to the SA:"
+            echo "https://console.cloud.google.com/iam-admin/iam?project=kwt-news"
+          } > "$BODY"
+
+          python3 -c "
+import json,os,urllib.request
+body=open('/tmp/comment.md').read()
+req=urllib.request.Request(
+  f'https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/comments',
+  data=json.dumps({'body': body}).encode(),
+  headers={
+    'Authorization': f'Bearer {os.environ[\"GITHUB_TOKEN\"]}',
+    'Accept':'application/vnd.github+json',
+    'Content-Type':'application/json',
+  })
+try:
+  r=urllib.request.urlopen(req)
+  print('Posted comment:', r.status, json.loads(r.read()).get('html_url'))
+except Exception as e:
+  print('Failed to post comment:', e)
+"
+          # Fail the job so the red X shows up in the Actions tab.
+          echo "::error::Deploy failed — see commit comment for log tail."
+          exit 1
 
       - name: Deploy summary
         if: always()
