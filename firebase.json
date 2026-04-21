@@ -5,6 +5,31 @@
   },
   "hosting": {
     "public": ".",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "scripts/**"]
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "scripts/**",
+      "app_jsx.jsx",
+      "package.json",
+      "package-lock.json",
+      "babel.config.json",
+      "README.md",
+      "*.md"
+    ],
+    "headers": [
+      {
+        "source": "app.compiled.js",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+        ]
+      },
+      {
+        "source": "**/*.@(jpg|jpeg|gif|png|svg|webp|ico)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=86400" }
+        ]
+      }
+    ]
   }
 }

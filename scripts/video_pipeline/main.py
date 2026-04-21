@@ -74,13 +74,15 @@ def run(category: str, breaking_only: bool = False) -> bool:
         write_automation_log(category, 'skipped', reason='pipeline lock held by another run')
         return False
 
-    # ── 1b. Anti-rapid-fire: skip if we posted this category in the last 25 min ─
+    # ── 1b. Anti-rapid-fire: skip if we posted this category in the last 15 min ─
     # This prevents parallel runs (e.g. news-watcher + run-all) from posting
     # the same article twice within minutes of each other.
+    # Fail-CLOSED: if the check itself errors (missing index, network, etc.),
+    # we skip this run rather than risk a duplicate. Next scheduled run recovers.
     try:
         recent_same_cat = get_recent_news(category, days=1)
         if recent_same_cat:
-            from datetime import datetime, timezone, timedelta
+            from datetime import datetime, timezone
             last_post_ts = recent_same_cat[0].get('timestamp')
             if last_post_ts:
                 if hasattr(last_post_ts, 'ToDatetime'):
@@ -93,9 +95,13 @@ def run(category: str, breaking_only: bool = False) -> bool:
                 if age_min < 15:
                     print(f"⏱️   Last post was {age_min:.0f} min ago — skipping to prevent rapid duplicate.")
                     write_automation_log(category, 'skipped', reason=f'posted {age_min:.0f}min ago (anti-rapid-fire)')
+                    release_pipeline_lock(category)
                     return False
     except Exception as e:
-        print(f"   Anti-rapid-fire check skipped: {e}")
+        print(f"   ❌ Anti-rapid-fire check failed — skipping run to avoid duplicate risk: {e}")
+        write_automation_log(category, 'skipped', reason=f'anti-rapid-fire check failed: {str(e)[:120]}')
+        release_pipeline_lock(category)
+        return False
 
     # ── 2. Fetch latest news from RSS ────────────────────────────────────────
     print("\n📡  Step 1 — Fetching RSS...")
@@ -250,18 +256,42 @@ def run(category: str, breaking_only: bool = False) -> bool:
 
         # ── 13. Social media posting ─────────────────────────────────────────
         print("\n📱  Step 11 — Posting to social media (non-fatal)...")
+        social_results = {}
+        social_status = 'skipped'
         try:
             from social_poster import post_to_all_platforms
-            post_to_all_platforms(
+            social_results = post_to_all_platforms(
                 news_id=news_id,
                 news_title=script_data['title'],
                 video_path=video_path,
                 video_url=video_url,
                 thumbnail_url=thumbnail_url,
                 description=content[:1000],
-            )
+            ) or {}
+            if social_results:
+                successes = [r for r in social_results.values() if isinstance(r, dict) and r.get('success')]
+                if len(successes) == len(social_results):
+                    social_status = 'done'
+                elif successes:
+                    social_status = 'partial'
+                else:
+                    social_status = 'failed'
         except Exception as e:
             print(f"   ⚠️  Social posting error (non-fatal): {e}")
+            social_status = 'failed'
+            social_results = {'error': str(e)[:300]}
+
+        # Persist social-posting outcome back onto the news doc so admin UI can show it.
+        try:
+            from firebase_poster import _get_db
+            from firebase_admin import firestore as _fs
+            _get_db().collection('news').document(news_id).update({
+                'socialPostStatus': social_status,
+                'socialPostedAt':   _fs.SERVER_TIMESTAMP,
+                'socialResults':    social_results,
+            })
+        except Exception as e:
+            print(f"   ⚠️  Failed to update socialPostStatus on news doc: {e}")
 
     # Release pipeline lock so next scheduled run can proceed
     release_pipeline_lock(category)
@@ -304,6 +334,14 @@ def main():
         except Exception:
             pass
         sys.exit(1)
+
+    finally:
+        # Always release the pipeline lock, even on crash, so the next scheduled
+        # run isn't blocked until the TTL (600s) expires.
+        try:
+            release_pipeline_lock(args.category)
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
