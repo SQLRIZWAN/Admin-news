@@ -1,32 +1,74 @@
 rules_version = '2';
 
-// ⚠️⚠️⚠️  WARNING — FULLY OPEN RULES  ⚠️⚠️⚠️
+// 🛡️ KWT News — Production Firestore Security Rules
 //
-// These rules allow ANYONE on the internet to READ, WRITE, UPDATE and DELETE
-// every document in every collection of this Firestore database. No auth
-// required. This is intended ONLY for quick testing / bring-up while you
-// diagnose read/write issues.
+// Design:
+//   • Public content (news, logos, ads) is publicly READABLE (powers the
+//     public website) but WRITABLE only by authenticated admin users.
+//   • Private collections (social tokens, automation config/logs, FCM tokens,
+//     pipeline locks) require auth for both read and write.
+//   • Comments: anyone can read; any logged-in user can post; authors (or an
+//     admin custom-claim) can edit/delete their own comments.
+//   • Users can only modify their own profile.
 //
-// 🚨 Risks while these are live:
-//   • Any visitor can wipe your entire `news`, `comments`, `ads` etc.
-//   • Any visitor can post spam / malicious content.
-//   • Billing can spike from abuse (reads are metered).
+// Admin SDK bypasses these rules entirely, so the Python automation pipeline
+// (firebase_poster.py → Admin SDK) and any Node Admin scripts still work.
 //
-// 🛡️  Tighten these as soon as things work:
-//   • `news`, `ads`, `logos`: keep `read:true`, change write to
-//     `request.auth != null` (admin-login required).
-//   • Everything else: change to `request.auth != null`.
-//   • See the earlier, safer version of this file in the repo history
-//     (commit 4b455da) for a good starting template.
-//
-// DEPLOY:
-//   https://console.firebase.google.com/project/kwt-news/firestore/rules
-//   → paste this entire file → Publish.
+// DEPLOY (automated via .github/workflows/deploy.yml):
+//     firebase deploy --only firestore:rules --project kwt-news
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ── Public content ─────────────────────────────────────────────────────
+    match /news/{id} {
+      allow read:  if true;
+      allow write: if request.auth != null;
+    }
+
+    match /logos/{id} {
+      allow read:  if true;
+      allow write: if request.auth != null;
+    }
+
+    match /ads/{id} {
+      allow read:  if true;
+      allow write: if request.auth != null;
+    }
+
+    // ── Comments: public read, authenticated create, author-only edit ──────
+    match /comments/{id} {
+      allow read:   if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && (
+        request.auth.uid == resource.data.authorId ||
+        request.auth.token.admin == true
+      );
+    }
+
+    // ── Automation internals (admin-only) ──────────────────────────────────
+    match /automation_config/{id}   { allow read, write: if request.auth != null; }
+    match /automation_logs/{id}     { allow read, write: if request.auth != null; }
+    match /pipeline_locks/{id}      { allow read, write: if request.auth != null; }
+
+    // ── Social / notifications (contain tokens — never expose) ─────────────
+    match /social_accounts/{id}     { allow read, write: if request.auth != null; }
+    match /social_media_queue/{id}  { allow read, write: if request.auth != null; }
+    match /notification_history/{id} { allow read, write: if request.auth != null; }
+    match /fcm_tokens/{id}          { allow read, write: if request.auth != null; }
+
+    // ── User profiles: self-service ────────────────────────────────────────
+    match /users/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── Diagnostic sandbox (admin-only) ────────────────────────────────────
+    match /_diagnostic/{id}         { allow read, write: if request.auth != null; }
+
+    // ── Default deny for everything else ───────────────────────────────────
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

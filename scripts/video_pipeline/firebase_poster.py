@@ -266,8 +266,11 @@ def post_news(article: dict) -> str:
         'published':    True,
         'status':       'published',
         # Auto-post metadata
-        'aiGenerated':  True,
-        'autoPosted':   True,
+        'aiGenerated':      True,
+        'autoPosted':       True,
+        'autoPostedAt':     ts,
+        'socialPostStatus': 'pending',  # pending | done | partial | failed | skipped
+        'socialPostedAt':   None,
         # Counters
         'views':        0,
         'likes':        0,
@@ -299,8 +302,9 @@ def acquire_pipeline_lock(category: str, ttl_seconds: int = 600) -> bool:
     Atomic Firestore transaction lock to prevent parallel pipeline runs
     from posting the same category simultaneously (e.g. run-all.yml matrix).
     Returns True if the lock was acquired, False if another run holds it.
-    Fails open (returns True) if Firestore is unavailable — better to post
-    than silently skip.
+    Fails CLOSED (returns False) if Firestore is unavailable — we'd rather
+    miss a single scheduled run than risk two parallel runs posting the same
+    article. The next cron tick recovers automatically.
     """
     try:
         db = _get_db()
@@ -335,8 +339,8 @@ def acquire_pipeline_lock(category: str, ttl_seconds: int = 600) -> bool:
 
         return _try_acquire(db.transaction())
     except Exception as e:
-        print(f"   ⚠️  Pipeline lock error (fail-open): {e}")
-        return True  # fail open — post rather than silently skip
+        print(f"   ❌ Pipeline lock error (fail-closed, skipping run): {e}")
+        return False  # fail closed — miss this run rather than risk a duplicate
 
 
 def release_pipeline_lock(category: str) -> None:

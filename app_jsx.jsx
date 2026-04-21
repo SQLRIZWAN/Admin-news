@@ -562,10 +562,11 @@ const Dashboard = () => {
 
   useEffect(()=>{
     const u=[]; const t0=Date.now();
-    // Unordered fetch + client sort — includes docs missing the `timestamp` field.
-    u.push(db.collection('news').limit(500).onSnapshot(s=>{
-      const docs = s.docs.map(d=>({id:d.id,...d.data()}))
-                         .sort((a,b)=> window.__docTime(b) - window.__docTime(a));
+    // Server-side orderBy + limit — fast, scalable. Requires all news docs
+    // to have a `timestamp` field (backfill-timestamps.js handles legacy docs).
+    // Single-field orderBy doesn't need a composite index.
+    u.push(db.collection('news').orderBy('timestamp','desc').limit(100).onSnapshot(s=>{
+      const docs = s.docs.map(d=>({id:d.id,...d.data()}));
       const cc={}; let brk=0;
       docs.forEach(dt=>{ if(dt.category) cc[dt.category]=(cc[dt.category]||0)+1; if(dt.isBreaking) brk++; });
       const rec = docs.slice(0,6);
@@ -578,7 +579,10 @@ const Dashboard = () => {
       setStats(p=>({...p,news:docs.length,breaking:brk}));
       const elapsed = Date.now()-t0;
       setTimeout(()=>setLoading(false), Math.max(0, 150-elapsed));
-    },()=>{ setTimeout(()=>setLoading(false), 150); }));
+    },err=>{
+      console.warn('[dashboard news] snapshot error:', err?.code||err?.message||err);
+      setTimeout(()=>setLoading(false), 150);
+    }));
 
     // Users, Comments, Ads: one-time get() — persistence makes repeat reads cache-served
     db.collection('users').limit(5000).get().then(s=>setStats(p=>({...p,users:s.size}))).catch(()=>{});
@@ -710,14 +714,26 @@ const LogoPicker = ({value, onSelect}) => {
   const addLogo = async()=>{
     if(!newUrl||!newName.trim()) return;
     setSaving(true);
-    await db.collection('logos').add({url:newUrl,name:newName.trim(),createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    setNewName(''); setNewUrl(''); setSaving(false); setTab('select'); loadLogos();
+    try{
+      await db.collection('logos').add({url:newUrl,name:newName.trim(),createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      setNewName(''); setNewUrl(''); setTab('select'); loadLogos();
+    }catch(e){
+      console.error('[addLogo]',e);
+      alert('Failed to add logo: '+(e.message||e));
+    }finally{
+      setSaving(false);
+    }
   };
 
   const deleteLogo = async(id,e)=>{
     e.stopPropagation();
-    await db.collection('logos').doc(id).delete();
-    setLogos(p=>p.filter(l=>l.id!==id));
+    try{
+      await db.collection('logos').doc(id).delete();
+      setLogos(p=>p.filter(l=>l.id!==id));
+    }catch(err){
+      console.error('[deleteLogo]',err);
+      alert('Failed to delete logo: '+(err.message||err));
+    }
   };
 
   const filtered = logos.filter(l=>!search||l.name.toLowerCase().includes(search.toLowerCase()));
@@ -1085,12 +1101,11 @@ const NewsManager = ({toast, initCat='all'}) => {
   useEffect(()=>{
     const t0 = Date.now();
     const finishLoading = ()=>{ setTimeout(()=>setLoading(false), Math.max(0, 150-(Date.now()-t0))); };
-    // Unordered fetch + client sort — surfaces docs missing the `timestamp` field
-    // (orderBy silently omits them). Works without any composite index.
-    const u = db.collection('news').limit(500).onSnapshot(
+    // Server-side orderBy + limit — fast and scalable. Legacy docs missing
+    // `timestamp` are covered by scripts/backfill-timestamps.js (one-shot).
+    const u = db.collection('news').orderBy('timestamp','desc').limit(200).onSnapshot(
       s=>{
-        const docs = s.docs.map(d=>({id:d.id,...d.data()}))
-                           .sort((a,b)=> window.__docTime(b) - window.__docTime(a));
+        const docs = s.docs.map(d=>({id:d.id,...d.data()}));
         window.__newsCache.list = docs; window.__newsCache.ts = Date.now();
         setNews(docs); finishLoading();
       },
@@ -1121,21 +1136,41 @@ const NewsManager = ({toast, initCat='all'}) => {
   };
 
   const toggleBreaking=async(id,val)=>{
-    await db.collection('news').doc(id).update({isBreaking:!val});
-    toast.add(!val?'Marked as Breaking!':'Breaking removed');
+    try{
+      await db.collection('news').doc(id).update({isBreaking:!val});
+      toast.add(!val?'Marked as Breaking!':'Breaking removed');
+    }catch(e){
+      console.error('[toggleBreaking]',e);
+      toast.add(`Failed: ${e.message||e}`,'error');
+    }
   };
 
   const toggleHidden=async(id,val)=>{
-    await db.collection('news').doc(id).update({hidden:!val});
-    toast.add(!val?'Article hidden':'Article visible');
+    try{
+      await db.collection('news').doc(id).update({hidden:!val});
+      toast.add(!val?'Article hidden':'Article visible');
+    }catch(e){
+      console.error('[toggleHidden]',e);
+      toast.add(`Failed: ${e.message||e}`,'error');
+    }
   };
+
+  // Draft detection: a doc is a draft when it's explicitly flagged as such.
+  // `hidden:true` = "published but hidden from public feed" (a separate state).
+  // Legacy docs missing all three fields are treated as published (autoposted
+  // pipeline always writes status='published').
+  const isDraftDoc = (n)=> (
+    n.status==='draft' ||
+    (n.published===false && n.status!=='published') ||
+    (!n.status && n.published===undefined && n.hidden===true && n.aiGenerated===true)
+  );
 
   const filtered=useMemo(()=>news.filter(n=>{
     const q=search.toLowerCase();
     const matchQ=!q||n.title?.toLowerCase().includes(q);
     const matchC=cat==='all'||n.category===cat;
-    const isDraft = n.hidden===true || n.status==='draft' || (n.published===false && n.aiGenerated===true);
-    const matchS = statusFilter==='all' || (statusFilter==='published'&&!isDraft) || (statusFilter==='draft'&&isDraft);
+    const draft = isDraftDoc(n);
+    const matchS = statusFilter==='all' || (statusFilter==='published'&&!draft) || (statusFilter==='draft'&&draft);
     return matchQ&&matchC&&matchS;
   }),[news,search,cat,statusFilter]);
 
@@ -1160,7 +1195,7 @@ const NewsManager = ({toast, initCat='all'}) => {
         <div>
           <h1 style={{fontFamily:'Outfit',fontSize:24,fontWeight:800,letterSpacing:'-.02em'}}>News</h1>
           <p style={{fontSize:12,color:'var(--muted)',marginTop:2}}>
-            {news.filter(n=>!(n.hidden===true||n.status==='draft'||(n.published===false&&n.aiGenerated===true))).length} published · {news.filter(n=>n.hidden===true||n.status==='draft'||(n.published===false&&n.aiGenerated===true)).length} drafts
+            {news.filter(n=>!isDraftDoc(n)).length} published · {news.filter(n=>isDraftDoc(n)).length} drafts · {news.filter(n=>n.hidden===true).length} hidden
             <span style={{fontSize:10,color:'var(--dim)',marginLeft:8}}>raw: {news.length} · proj: {firebase.app().options.projectId}</span>
           </p>
         </div>
@@ -1245,7 +1280,7 @@ const NewsManager = ({toast, initCat='all'}) => {
           <React.Fragment key={n.id}>
           <div className="row"
             style={{padding:'13px 16px',borderBottom:'1px solid rgba(26,45,74,.5)',display:'flex',alignItems:'center',gap:12,
-              background:n.hidden||n.status==='draft'?'rgba(251,191,36,.03)':'transparent'}}>
+              background:isDraftDoc(n)?'rgba(251,191,36,.03)':(n.hidden===true?'rgba(148,163,184,.04)':'transparent')}}>
 
             {/* Thumbnail */}
             <div style={{width:56,height:56,borderRadius:12,background:'var(--surface2)',overflow:'hidden',flexShrink:0,border:'1px solid var(--border)',position:'relative'}}>
@@ -1253,7 +1288,8 @@ const NewsManager = ({toast, initCat='all'}) => {
                 ? <img src={n.imageUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} loading="lazy"/>
                 : <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}><Ic n={n.videoUrl?'video':'img'} s={20} c="var(--dim)"/></div>
               }
-              {(n.hidden||n.status==='draft')&&<div style={{position:'absolute',bottom:0,left:0,right:0,background:'rgba(251,191,36,.85)',fontSize:8,fontWeight:800,textAlign:'center',color:'#050c18',padding:'1px 0'}}>DRAFT</div>}
+              {isDraftDoc(n)&&<div style={{position:'absolute',bottom:0,left:0,right:0,background:'rgba(251,191,36,.85)',fontSize:8,fontWeight:800,textAlign:'center',color:'#050c18',padding:'1px 0'}}>DRAFT</div>}
+              {!isDraftDoc(n)&&n.hidden===true&&<div style={{position:'absolute',bottom:0,left:0,right:0,background:'rgba(148,163,184,.85)',fontSize:8,fontWeight:800,textAlign:'center',color:'#050c18',padding:'1px 0'}}>HIDDEN</div>}
             </div>
 
             {/* Info */}
@@ -1266,16 +1302,26 @@ const NewsManager = ({toast, initCat='all'}) => {
                 <span style={{fontSize:10,color:'var(--muted)',background:'var(--surface2)',padding:'1px 6px',borderRadius:4,border:'1px solid var(--border)'}}>{n.category||'all'}</span>
                 {n.isBreaking && <span className="badge" style={{background:'rgba(248,113,113,.12)',color:'var(--danger)',border:'1px solid rgba(248,113,113,.25)',fontSize:9}}>⚡ BREAKING</span>}
                 {n.videoUrl && <span className="badge" style={{background:'rgba(96,165,250,.1)',color:'#60a5fa',border:'1px solid rgba(96,165,250,.2)',fontSize:9}}>🎬 VIDEO</span>}
-                {(n.hidden||n.status==='draft') && <span className="badge" style={{background:'rgba(251,191,36,.12)',color:'#fbbf24',border:'1px solid rgba(251,191,36,.25)',fontSize:9}}>📝 DRAFT</span>}
+                {isDraftDoc(n) && <span className="badge" style={{background:'rgba(251,191,36,.12)',color:'#fbbf24',border:'1px solid rgba(251,191,36,.25)',fontSize:9}}>📝 DRAFT</span>}
+                {!isDraftDoc(n) && n.hidden===true && <span className="badge" style={{background:'rgba(148,163,184,.12)',color:'#94a3b8',border:'1px solid rgba(148,163,184,.25)',fontSize:9}}>🙈 HIDDEN</span>}
+                {n.autoPosted && n.socialPostStatus && n.socialPostStatus!=='done' && <span className="badge" style={{background:n.socialPostStatus==='failed'?'rgba(248,113,113,.12)':'rgba(167,139,250,.12)',color:n.socialPostStatus==='failed'?'var(--danger)':'#a78bfa',border:'1px solid currentColor',fontSize:9}}>SOCIAL: {n.socialPostStatus}</span>}
               </div>
             </div>
 
             {/* Actions */}
             <div style={{display:'flex',gap:5,flexShrink:0,alignItems:'center'}}>
               {/* Publish draft */}
-              {(n.hidden||n.status==='draft')&&(
+              {isDraftDoc(n)&&(
                 <button className="btn btn-icon" title="Publish this draft" style={{borderColor:'rgba(52,211,153,.4)',color:'#34d399'}}
-                  onClick={async()=>{ await db.collection('news').doc(n.id).update({hidden:false,published:true,status:'published'}); toast.add('✅ Published!'); }}>
+                  onClick={async()=>{
+                    try{
+                      await db.collection('news').doc(n.id).update({hidden:false,published:true,status:'published'});
+                      toast.add('✅ Published!');
+                    }catch(e){
+                      console.error('[publishDraft]',e);
+                      toast.add(`Publish failed: ${e.message||e}`,'error');
+                    }
+                  }}>
                   <Ic n="send" s={13}/>
                 </button>
               )}
@@ -1477,8 +1523,13 @@ const AdsManager = ({toast}) => {
   };
 
   const toggleActive=async(id,val)=>{
-    await db.collection('ads').doc(id).update({active:!val});
-    toast.add(!val?'Ad activated':'Ad paused');
+    try{
+      await db.collection('ads').doc(id).update({active:!val});
+      toast.add(!val?'Ad activated':'Ad paused');
+    }catch(e){
+      console.error('[toggleActive]',e);
+      toast.add(`Failed: ${e.message||e}`,'error');
+    }
   };
 
   // Full-screen form view
@@ -1584,7 +1635,15 @@ const CommentsManager = ({toast}) => {
   },[]);
 
   const del=async id=>{
-    await db.collection('comments').doc(id).delete(); toast.add('Deleted'); setConfirm(null);
+    try{
+      await db.collection('comments').doc(id).delete();
+      toast.add('Deleted');
+    }catch(e){
+      console.error('[deleteComment]',e);
+      toast.add(`Failed: ${e.message||e}`,'error');
+    }finally{
+      setConfirm(null);
+    }
   };
 
   const filtered=useMemo(()=>comments.filter(c=>{
@@ -1667,8 +1726,13 @@ const UsersManager = ({toast}) => {
   },[]);
 
   const toggleBlock=async(id,blocked)=>{
-    await db.collection('users').doc(id).update({blocked:!blocked});
-    toast.add(!blocked?'User blocked':'Unblocked');
+    try{
+      await db.collection('users').doc(id).update({blocked:!blocked});
+      toast.add(!blocked?'User blocked':'Unblocked');
+    }catch(e){
+      console.error('[toggleBlock]',e);
+      toast.add(`Failed: ${e.message||e}`,'error');
+    }
   };
 
   const filtered=useMemo(()=>users.filter(u=>{
