@@ -12,10 +12,23 @@ fully-automated AI news publishing pipeline (GitHub Actions + Python).
 
 ---
 
-## One-time setup (zero-click thereafter)
+## Zero-click setup
 
-### 1. Confirm GitHub secrets
-Repo → **Settings → Secrets and variables → Actions** → verify these exist:
+**Push to `main` → everything deploys.** No local commands, no console clicks.
+
+The only prerequisite is the repo-level `FIREBASE_SERVICE_ACCOUNT` secret
+(already configured). On every push to `main` that touches admin files,
+`deploy.yml` will:
+
+1. `npm ci` → `npm run build` (Babel compiles `app_jsx.jsx` → `app.compiled.js`).
+2. Pre-flight: verify the service account can reach project `kwt-news`.
+3. **One-shot backfill** — fills `timestamp` on any legacy `news` docs that are
+   missing it (idempotent via `_meta/backfill_status` marker; runs in ~2s once
+   complete, so cheap on every deploy).
+4. `firebase deploy --only firestore:indexes,firestore:rules,hosting`.
+
+### Required secrets
+Repo → **Settings → Secrets and variables → Actions**:
 
 | Secret | Purpose |
 |---|---|
@@ -26,37 +39,12 @@ Repo → **Settings → Secrets and variables → Actions** → verify these exi
 | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` | YouTube upload. |
 | `X_API_KEY`, `X_API_SECRET` | X/Twitter posting. |
 
-### 2. Grant the service account index permissions
-Firestore indexes and rules can only be deployed by a principal with the
-**Cloud Datastore Index Admin** role. Do this once:
-
-1. Open https://console.cloud.google.com/iam-admin/iam?project=kwt-news
-2. Find the principal matching the `client_email` from your
-   `FIREBASE_SERVICE_ACCOUNT` JSON.
-3. Click the pencil → **Add another role** → select
-   **Cloud Datastore Index Admin**. Save.
-4. (Also recommended) **Firebase Rules Admin**, **Firebase Hosting Admin**.
-
-### 3. (One-shot) Backfill legacy docs missing `timestamp`
-The admin dashboard uses server-side `orderBy('timestamp')`, which silently
-omits docs missing that field. Run this **once** to populate any legacy docs:
-
-```bash
-cd scripts
-npm install
-FIREBASE_SERVICE_ACCOUNT="$(cat /path/to/service-account.json)" \
-  npm run backfill:timestamps
-```
-
-Idempotent — safe to re-run.
-
-### 4. First deploy
-Push any change to `main` — the `deploy.yml` workflow will:
-
-1. `npm ci` (root) and `npm run build` (Babel compiles `app_jsx.jsx` → `app.compiled.js`).
-2. `firebase deploy --only firestore:indexes,firestore:rules,hosting`.
-
-After that, **every push to `main`** that touches the admin panel auto-deploys.
+### If `deploy.yml` fails with a permissions error
+Happens only if the service account lacks IAM roles (usually not the case if
+it was created via the Firebase console). The workflow prints the exact fix
+link and required role. A single GCP IAM edit (~2 min) resolves it — not
+something a workflow can do for itself since granting IAM requires a separate
+admin principal.
 
 ---
 

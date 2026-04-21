@@ -62,6 +62,41 @@ jobs:
           fi
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+          # Extract client_email so later steps can point the user at the right SA.
+          CLIENT_EMAIL=$(node -e "console.log(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT).client_email || '')")
+          echo "SA_CLIENT_EMAIL=$CLIENT_EMAIL" >> "$GITHUB_ENV"
+          echo "   Service account: $CLIENT_EMAIL"
+
+      - name: Pre-flight — verify SA can read the project
+        run: |
+          set +e
+          OUT=$(npx --yes firebase-tools@13 projects:list --json 2>&1)
+          RC=$?
+          set -e
+          if [ $RC -ne 0 ] || ! echo "$OUT" | grep -q '"projectId": *"kwt-news"'; then
+            echo "❌ The service account cannot see project kwt-news."
+            echo "   Fix once in GCP Console → IAM:"
+            echo "     https://console.cloud.google.com/iam-admin/iam?project=kwt-news"
+            echo "   Grant the principal '$SA_CLIENT_EMAIL' these roles:"
+            echo "     • Firebase Admin  (or)"
+            echo "     • Cloud Datastore Index Admin + Firebase Rules Admin + Firebase Hosting Admin"
+            echo "   Then re-run this workflow. No code change required."
+            echo ""
+            echo "firebase-tools output:"
+            echo "$OUT"
+            exit 1
+          fi
+          echo "✓ Service account has access to kwt-news."
+
+      - name: One-shot backfill — populate missing `timestamp` on legacy news docs
+        working-directory: scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          # Idempotent: marker doc in Firestore short-circuits on repeat runs.
+          # First run fixes any legacy docs; subsequent runs finish in <2s.
+          npm install --no-audit --no-fund --omit=dev
+          node backfill-timestamps.js
 
       - name: Determine deploy target
         id: target
@@ -80,11 +115,28 @@ jobs:
 
       - name: Firebase deploy
         run: |
+          set +e
           npx --yes firebase-tools@13 deploy \
             ${{ steps.target.outputs.flags }} \
             --project kwt-news \
             --non-interactive \
-            --force
+            --force 2>&1 | tee "$RUNNER_TEMP/deploy.log"
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ $RC -ne 0 ]; then
+            if grep -qiE "permission.denied|forbidden|403|insufficient|iam" "$RUNNER_TEMP/deploy.log"; then
+              echo ""
+              echo "❌ Deploy failed with a permissions error."
+              echo "   The service account '$SA_CLIENT_EMAIL' is missing one or more IAM roles."
+              echo "   Open GCP IAM and grant the roles below — one-time, ~2 min:"
+              echo "     https://console.cloud.google.com/iam-admin/iam?project=kwt-news"
+              echo "   Required roles (any of these sets works):"
+              echo "     • Firebase Admin       ← simplest, grants everything needed"
+              echo "     • OR: Cloud Datastore Index Admin + Firebase Rules Admin + Firebase Hosting Admin"
+              echo "   After granting, re-run this workflow — no code change needed."
+            fi
+            exit $RC
+          fi
 
       - name: Deploy summary
         if: always()

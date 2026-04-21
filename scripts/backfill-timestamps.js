@@ -1,21 +1,29 @@
 #!/usr/bin/env node
 /**
- * One-shot: backfill missing `timestamp` field on legacy `news` docs.
+ * Idempotent backfill: populate missing `timestamp` on legacy `news` docs.
  *
- * Why: the admin dashboard / site move to server-side orderBy('timestamp', 'desc')
- * for speed. Firestore's orderBy silently drops docs missing the sort field, so
- * any legacy doc without `timestamp` would vanish from the list. This script
- * finds those docs and sets `timestamp = createdAt || publishedAt || now`.
+ * Why: the admin dashboard / public site use server-side
+ * `orderBy('timestamp','desc')`. Firestore silently omits docs missing the
+ * sort field, so any legacy doc without `timestamp` would vanish from lists.
+ * This script finds those docs and sets `timestamp = createdAt || now`.
  *
- * Usage (local):
- *     cd scripts
- *     npm install
- *     FIREBASE_SERVICE_ACCOUNT="$(cat /path/to/sa.json)" npm run backfill:timestamps
+ * Idempotent via a marker doc (`_meta/backfill_status`) — once a clean pass
+ * is complete, subsequent runs skip quickly. Safe to run on every CI deploy.
  *
- * Idempotent. Safe to re-run.
+ * Usage (CI or local):
+ *     FIREBASE_SERVICE_ACCOUNT="$(cat sa.json)" node backfill-timestamps.js
+ *
+ * Flags:
+ *     --force   ignore the marker doc and do a full rescan
  */
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
+
+const FORCE = process.argv.includes('--force');
+const MARKER_COL = '_meta';
+const MARKER_DOC = 'backfill_status';
+// Bump this when the backfill logic changes, to force a re-run.
+const BACKFILL_VERSION = 1;
 
 function getDb() {
   if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -27,10 +35,37 @@ function getDb() {
   return getFirestore();
 }
 
+async function readMarker(db) {
+  try {
+    const snap = await db.collection(MARKER_COL).doc(MARKER_DOC).get();
+    return snap.exists ? snap.data() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeMarker(db, stats) {
+  try {
+    await db.collection(MARKER_COL).doc(MARKER_DOC).set({
+      version: BACKFILL_VERSION,
+      lastRunAt: FieldValue.serverTimestamp(),
+      ...stats,
+    }, { merge: true });
+  } catch (e) {
+    console.warn('   (could not write marker doc — continuing):', e.message);
+  }
+}
+
 async function main() {
   const db = getDb();
-  console.log('🔍 Scanning `news` collection for docs missing `timestamp`…');
 
+  const marker = await readMarker(db);
+  if (!FORCE && marker && marker.version === BACKFILL_VERSION && marker.pendingCount === 0) {
+    console.log(`✓ Backfill already complete (version ${marker.version}). Pass --force to rescan.`);
+    return;
+  }
+
+  console.log('🔍 Scanning `news` collection for docs missing `timestamp`…');
   const snap = await db.collection('news').get();
   const total = snap.size;
   let fixed = 0;
@@ -43,17 +78,14 @@ async function main() {
     if (d.timestamp) { alreadyOk++; continue; }
 
     const fallback = d.createdAt || d.publishedAt || d.updatedAt || d.date || d.time;
-    const ts = fallback instanceof Timestamp
+    const ts = (fallback && typeof fallback.toDate === 'function')
       ? fallback
-      : (fallback && typeof fallback.toDate === 'function')
-        ? fallback
-        : FieldValue.serverTimestamp();
+      : FieldValue.serverTimestamp();
 
     writer.update(doc.ref, { timestamp: ts });
     fixed++;
     pending++;
 
-    // Flush every 400 writes (Firestore batch limit is 500)
     if (pending >= 400) {
       await writer.commit();
       writer = db.batch();
@@ -65,9 +97,11 @@ async function main() {
   if (pending > 0) await writer.commit();
 
   console.log('\n📊 Backfill complete');
-  console.log(`    Total docs scanned: ${total}`);
+  console.log(`    Total docs scanned:    ${total}`);
   console.log(`    Already had timestamp: ${alreadyOk}`);
-  console.log(`    Backfilled: ${fixed}`);
+  console.log(`    Backfilled:            ${fixed}`);
+
+  await writeMarker(db, { totalScanned: total, fixed, pendingCount: 0 });
 }
 
 main().catch(e => {
