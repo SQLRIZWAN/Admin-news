@@ -1,0 +1,78 @@
+name: Pages — build & deploy admin panel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app_jsx.jsx'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'babel.config.json'
+      - '.github/workflows/pages.yml'
+      - '**/*.jpg'
+      - '**/*.png'
+      - '**/*.svg'
+      - '**/*.ico'
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build JSX → app.compiled.js
+        run: npm run build
+
+      - name: Prepare publish dir
+        run: |
+          mkdir -p _site
+          # Copy everything that should be publicly served. Exclude dev/build
+          # files and CI-only scripts.
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='node_modules' \
+            --exclude='scripts' \
+            --exclude='app_jsx.jsx' \
+            --exclude='babel.config.json' \
+            --exclude='package*.json' \
+            --exclude='firebase.json' \
+            --exclude='firestore.*' \
+            --exclude='README.md' \
+            --exclude='_site' \
+            ./ _site/
+          ls -lh _site/ | head -30
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

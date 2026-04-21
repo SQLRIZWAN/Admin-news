@@ -1,14 +1,12 @@
 {
   "name": "kwt-news-admin",
   "version": "1.0.0",
-  "description": "KWT News admin panel — frontend (Firebase Hosting) + automation pipeline",
+  "description": "KWT News admin panel — frontend (GitHub Pages) + automation pipeline",
   "private": true,
   "scripts": {
     "build": "babel app_jsx.jsx --out-file app.compiled.js",
-    "deploy": "npm run build && npx --yes firebase-tools@13 deploy --project kwt-news --non-interactive",
     "deploy:indexes": "npx --yes firebase-tools@13 deploy --only firestore:indexes --project kwt-news --non-interactive",
-    "deploy:rules":   "npx --yes firebase-tools@13 deploy --only firestore:rules   --project kwt-news --non-interactive",
-    "deploy:hosting": "npm run build && npx --yes firebase-tools@13 deploy --only hosting --project kwt-news --non-interactive"
+    "deploy:rules":   "npx --yes firebase-tools@13 deploy --only firestore:rules   --project kwt-news --non-interactive"
   },
   "devDependencies": {
     "@babel/cli": "^7.28.6",

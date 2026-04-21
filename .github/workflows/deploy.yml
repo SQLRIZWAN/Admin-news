@@ -1,18 +1,18 @@
-name: Deploy Admin Panel (Firestore + Hosting)
+name: Deploy Firestore (indexes + rules)
+
+# Hosting lives on GitHub Pages — see `pages build and deployment` workflow.
+# This workflow only deploys Firestore indexes + rules when those files change.
 
 on:
   push:
     branches: [main]
     paths:
-      - 'app_jsx.jsx'
-      - 'index.html'
       - 'firestore.rules'
       - 'firestore.indexes.json'
       - 'firebase.json'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'babel.config.json'
       - '.github/workflows/deploy.yml'
+      - 'scripts/backfill-timestamps.js'
+      - 'scripts/package.json'
   workflow_dispatch:
     inputs:
       target:
@@ -24,7 +24,6 @@ on:
           - all
           - indexes
           - rules
-          - hosting
 
 concurrency:
   group: deploy-main
@@ -47,13 +46,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build admin panel (JSX → app.compiled.js)
-        run: npm run build
 
       - name: Write Firebase service account to disk
         env:
@@ -66,27 +58,19 @@ jobs:
           fi
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
-          # Extract client_email so later steps can point the user at the right SA.
           CLIENT_EMAIL=$(node -e "console.log(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT).client_email || '')")
           echo "SA_CLIENT_EMAIL=$CLIENT_EMAIL" >> "$GITHUB_ENV"
           echo "   Service account: $CLIENT_EMAIL"
 
-      - name: Best-effort IAM self-elevation (tries to grant missing Firebase Admin role)
+      - name: Best-effort IAM self-elevation (grants Firebase Admin if possible)
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          # Tries once to add roles/firebase.admin to the SA. Requires the SA
-          # to have IAM admin or Owner — most SAs don't, in which case the
-          # PATCH returns 403 and we fall back to a clear manual-fix message
-          # from the deploy step. Cheap to attempt, safe to fail.
           python3 - <<'PYEOF'
-          import json, os, sys, subprocess, urllib.request, urllib.error
+          import base64, json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
           sa = json.loads(os.environ['FIREBASE_SERVICE_ACCOUNT'])
-          email = sa['client_email']
-          project = 'kwt-news'
-          # Mint an access token via gcloud-auth-style JWT exchange.
-          import base64, time, hmac, hashlib
+          email, project = sa['client_email'], 'kwt-news'
           def b64(b): return base64.urlsafe_b64encode(b).rstrip(b'=')
           now = int(time.time())
           header = b64(json.dumps({"alg":"RS256","typ":"JWT"}).encode())
@@ -97,19 +81,16 @@ jobs:
               "exp": now+3600, "iat": now,
           }).encode())
           signing_input = header + b'.' + claims
-          # Use openssl to sign (avoids extra deps).
           key_path = '/tmp/sa_key.pem'
           open(key_path,'w').write(sa['private_key'])
           sig = subprocess.check_output(['openssl','dgst','-sha256','-sign',key_path], input=signing_input)
           jwt = signing_input + b'.' + b64(sig)
-          import urllib.parse
           r = urllib.request.urlopen('https://oauth2.googleapis.com/token',
               data=urllib.parse.urlencode({
                   'grant_type':'urn:ietf:params:oauth:grant-type:jwt-bearer',
                   'assertion': jwt.decode()}).encode())
           token = json.loads(r.read())['access_token']
           H = {'Authorization': f'Bearer {token}', 'Content-Type':'application/json'}
-          # Read current IAM policy.
           req = urllib.request.Request(
               f'https://cloudresourcemanager.googleapis.com/v1/projects/{project}:getIamPolicy',
               data=b'{}', headers=H)
@@ -117,62 +98,36 @@ jobs:
               policy = json.loads(urllib.request.urlopen(req).read())
           except urllib.error.HTTPError as e:
               print(f'getIamPolicy → {e.code}: {e.read().decode()[:300]}')
-              print('SA cannot read IAM policy. Manual fix required — see deploy step output.')
+              print('SA cannot read IAM policy. Manual fix required.')
               sys.exit(0)
-          member = f'serviceAccount:{email}'
-          want = 'roles/firebase.admin'
+          member, want = f'serviceAccount:{email}', 'roles/firebase.admin'
           bindings = policy.setdefault('bindings', [])
           for b in bindings:
               if b['role'] == want and member in b.get('members', []):
-                  print(f'✓ SA already has {want}. Nothing to do.')
-                  sys.exit(0)
+                  print(f'✓ SA already has {want}.'); sys.exit(0)
           for b in bindings:
               if b['role'] == want:
-                  b.setdefault('members', []).append(member)
-                  break
+                  b.setdefault('members', []).append(member); break
           else:
               bindings.append({'role': want, 'members': [member]})
-          # PATCH.
-          payload = json.dumps({'policy': policy}).encode()
           req2 = urllib.request.Request(
               f'https://cloudresourcemanager.googleapis.com/v1/projects/{project}:setIamPolicy',
-              data=payload, headers=H, method='POST')
+              data=json.dumps({'policy': policy}).encode(), headers=H, method='POST')
           try:
               urllib.request.urlopen(req2)
               print(f'✓ Granted {want} to {email} — zero-click from now on.')
           except urllib.error.HTTPError as e:
               print(f'setIamPolicy → {e.code}: {e.read().decode()[:300]}')
-              print('SA lacks IAM admin. Deploy step will surface the one-time manual fix.')
+              print('SA lacks IAM admin. One-time manual grant required — see deploy step.')
           PYEOF
-
-      - name: Pre-flight — verify SA can read the project
-        run: |
-          set +e
-          OUT=$(npx --yes firebase-tools@13 projects:list --json 2>&1)
-          RC=$?
-          set -e
-          if [ $RC -ne 0 ] || ! echo "$OUT" | grep -q '"projectId": *"kwt-news"'; then
-            echo "❌ The service account cannot see project kwt-news."
-            echo "   Fix once in GCP Console → IAM:"
-            echo "     https://console.cloud.google.com/iam-admin/iam?project=kwt-news"
-            echo "   Grant the principal '$SA_CLIENT_EMAIL' these roles:"
-            echo "     • Firebase Admin  (or)"
-            echo "     • Cloud Datastore Index Admin + Firebase Rules Admin + Firebase Hosting Admin"
-            echo "   Then re-run this workflow. No code change required."
-            echo ""
-            echo "firebase-tools output:"
-            echo "$OUT"
-            exit 1
-          fi
-          echo "✓ Service account has access to kwt-news."
 
       - name: One-shot backfill — populate missing `timestamp` on legacy news docs
         working-directory: scripts
+        continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           # Idempotent: marker doc in Firestore short-circuits on repeat runs.
-          # First run fixes any legacy docs; subsequent runs finish in <2s.
           npm install --no-audit --no-fund --omit=dev
           node backfill-timestamps.js
 
@@ -182,18 +137,17 @@ jobs:
           T="${{ github.event.inputs.target }}"
           if [ -z "$T" ]; then T="all"; fi
           case "$T" in
-            all)     FLAGS="--only firestore:indexes,firestore:rules,hosting" ;;
+            all)     FLAGS="--only firestore:indexes,firestore:rules" ;;
             indexes) FLAGS="--only firestore:indexes" ;;
             rules)   FLAGS="--only firestore:rules" ;;
-            hosting) FLAGS="--only hosting" ;;
-            *)       FLAGS="--only firestore:indexes,firestore:rules,hosting" ;;
+            *)       FLAGS="--only firestore:indexes,firestore:rules" ;;
           esac
           echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
           echo "→ firebase deploy $FLAGS"
 
       - name: Firebase deploy — indexes
         id: deploy_indexes
-        if: contains(steps.target.outputs.flags, 'firestore:indexes') || contains(steps.target.outputs.flags, 'all')
+        if: contains(steps.target.outputs.flags, 'firestore:indexes')
         continue-on-error: true
         run: |
           set -o pipefail
@@ -203,7 +157,7 @@ jobs:
 
       - name: Firebase deploy — rules
         id: deploy_rules
-        if: contains(steps.target.outputs.flags, 'firestore:rules') || contains(steps.target.outputs.flags, 'all')
+        if: contains(steps.target.outputs.flags, 'firestore:rules')
         continue-on-error: true
         run: |
           set -o pipefail
@@ -211,18 +165,8 @@ jobs:
             --project kwt-news --non-interactive --force --debug \
             2>&1 | tee "$RUNNER_TEMP/deploy-rules.log"
 
-      - name: Firebase deploy — hosting
-        id: deploy_hosting
-        if: contains(steps.target.outputs.flags, 'hosting') || contains(steps.target.outputs.flags, 'all')
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          npx --yes firebase-tools@13 deploy --only hosting \
-            --project kwt-news --non-interactive --force --debug \
-            2>&1 | tee "$RUNNER_TEMP/deploy-hosting.log"
-
       - name: Post failure diagnostics as commit comment
-        if: steps.deploy_indexes.outcome == 'failure' || steps.deploy_rules.outcome == 'failure' || steps.deploy_hosting.outcome == 'failure'
+        if: steps.deploy_indexes.outcome == 'failure' || steps.deploy_rules.outcome == 'failure'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -230,11 +174,11 @@ jobs:
         run: |
           BODY=/tmp/comment.md
           {
-            echo "## ❌ Deploy failed — diagnostics"
+            echo "## ❌ Firestore deploy failed — diagnostics"
             echo ""
             echo "SA: \`$SA_CLIENT_EMAIL\`"
             echo ""
-            for target in indexes rules hosting; do
+            for target in indexes rules; do
               OUT="$RUNNER_TEMP/deploy-$target.log"
               [ -f "$OUT" ] || continue
               echo "### $target"
@@ -249,17 +193,14 @@ jobs:
           } > "$BODY"
 
           cat > /tmp/post.py <<'PYEOF'
-          import json, os, sys, urllib.request, urllib.error
+          import json, os, sys, urllib.error, urllib.request
           body = open('/tmp/comment.md').read()
-          repo = os.environ['GH_REPO']
-          sha  = os.environ['GH_SHA']
-          token = os.environ['GITHUB_TOKEN']
+          repo, sha = os.environ['GH_REPO'], os.environ['GH_SHA']
           H = {
-              'Authorization': f'Bearer {token}',
+              'Authorization': f'Bearer {os.environ["GITHUB_TOKEN"]}',
               'Accept': 'application/vnd.github+json',
               'Content-Type': 'application/json',
           }
-
           def post(url, payload):
               req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=H)
               try:
@@ -269,21 +210,18 @@ jobs:
                   return e.code, e.read().decode(errors='replace')[:300]
               except Exception as e:
                   return 0, str(e)
-
-          # Try commit comment first.
-          status, info = post(f'https://api.github.com/repos/{repo}/commits/{sha}/comments', {'body': body})
-          print('Commit-comment POST:', status, info)
-          if status == 201:
+          s, info = post(f'https://api.github.com/repos/{repo}/commits/{sha}/comments', {'body': body})
+          print('Commit comment:', s, info)
+          if s == 201:
               sys.exit(0)
-          # Fallback: open a tracking issue.
-          status2, info2 = post(
+          s2, info2 = post(
               f'https://api.github.com/repos/{repo}/issues',
-              {'title': f'Deploy failed on {sha[:7]}', 'body': body, 'labels': ['deploy-failure']},
+              {'title': f'Firestore deploy failed on {sha[:7]}', 'body': body, 'labels': ['deploy-failure']},
           )
-          print('Issue POST:', status2, info2)
+          print('Issue fallback:', s2, info2)
           PYEOF
           python3 /tmp/post.py
-          echo "::error::Deploy failed — see commit comment for log tail."
+          echo "::error::Firestore deploy failed — see commit comment."
           exit 1
 
       - name: Deploy summary
@@ -294,5 +232,5 @@ jobs:
           echo "- Target: \`${{ steps.target.outputs.flags }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Commit: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Status: **${{ job.status }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Hosted: https://kwt-news.web.app" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Site (GitHub Pages): https://sqlrizwan.github.io/Admin-news/" >> "$GITHUB_STEP_SUMMARY"
           echo "- Indexes: https://console.firebase.google.com/project/kwt-news/firestore/indexes" >> "$GITHUB_STEP_SUMMARY"
