@@ -30,6 +30,10 @@ concurrency:
   group: deploy-main
   cancel-in-progress: true
 
+permissions:
+  contents: write
+  issues: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -171,23 +175,38 @@ jobs:
           } > "$BODY"
 
           cat > /tmp/post.py <<'PYEOF'
-          import json, os, urllib.request, sys
+          import json, os, sys, urllib.request, urllib.error
           body = open('/tmp/comment.md').read()
           repo = os.environ['GH_REPO']
           sha  = os.environ['GH_SHA']
-          req = urllib.request.Request(
-              f'https://api.github.com/repos/{repo}/commits/{sha}/comments',
-              data=json.dumps({'body': body}).encode(),
-              headers={
-                  'Authorization': f'Bearer {os.environ["GITHUB_TOKEN"]}',
-                  'Accept': 'application/vnd.github+json',
-                  'Content-Type': 'application/json',
-              })
-          try:
-              r = urllib.request.urlopen(req)
-              print('Posted comment:', r.status, json.loads(r.read()).get('html_url'))
-          except Exception as e:
-              print('Failed to post comment:', e, file=sys.stderr)
+          token = os.environ['GITHUB_TOKEN']
+          H = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'Content-Type': 'application/json',
+          }
+
+          def post(url, payload):
+              req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=H)
+              try:
+                  r = urllib.request.urlopen(req)
+                  return r.status, json.loads(r.read()).get('html_url')
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read().decode(errors='replace')[:300]
+              except Exception as e:
+                  return 0, str(e)
+
+          # Try commit comment first.
+          status, info = post(f'https://api.github.com/repos/{repo}/commits/{sha}/comments', {'body': body})
+          print('Commit-comment POST:', status, info)
+          if status == 201:
+              sys.exit(0)
+          # Fallback: open a tracking issue.
+          status2, info2 = post(
+              f'https://api.github.com/repos/{repo}/issues',
+              {'title': f'Deploy failed on {sha[:7]}', 'body': body, 'labels': ['deploy-failure']},
+          )
+          print('Issue POST:', status2, info2)
           PYEOF
           python3 /tmp/post.py
           echo "::error::Deploy failed — see commit comment for log tail."
