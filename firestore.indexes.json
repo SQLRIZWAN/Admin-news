@@ -56,14 +56,6 @@
         { "fieldPath": "category",  "order": "ASCENDING"  },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "news",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "autoPosted", "order": "ASCENDING"  },
-        { "fieldPath": "timestamp",  "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []

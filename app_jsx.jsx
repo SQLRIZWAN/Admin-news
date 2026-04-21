@@ -4309,12 +4309,18 @@ const MediaManager = ({toast}) => {
   },[]);
 
   // ── Firestore: auto-posted videos ────────────────────────────
+  // Fetch recent news (single-field orderBy needs no composite index) and
+  // client-side filter for autoPosted. Avoids needing a composite index
+  // that we can't always deploy.
   useEffect(()=>{
     const unsub = db.collection('news')
-      .where('autoPosted','==',true)
-      .orderBy('timestamp','desc').limit(30)
+      .orderBy('timestamp','desc').limit(200)
       .onSnapshot(snap=>{
-        setVideos(snap.docs.map(d=>({id:d.id,...d.data()})));
+        const auto = snap.docs
+          .map(d=>({id:d.id,...d.data()}))
+          .filter(n=>n.autoPosted===true)
+          .slice(0,30);
+        setVideos(auto);
         setLoadingVid(false);
       }, ()=>setLoadingVid(false));
     return ()=>unsub();
