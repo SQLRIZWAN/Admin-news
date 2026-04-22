@@ -567,7 +567,12 @@ const Dashboard = () => {
     // field — which hides legacy auto-posted items. Client-side sort via
     // __docTime() falls back through createdAt/publishedAt/date/updatedAt so
     // every doc stays visible.
-    u.push(db.collection('news').limit(500).onSnapshot(s=>{
+
+    // Force server read on first load (bypass stale cache from automation pipeline)
+    const firstLoad = !window.__newsCache.dashRecent?.length;
+    const sourceHint = firstLoad ? 'server' : 'default';
+
+    u.push(db.collection('news').limit(500).onSnapshot({source:sourceHint}, s=>{
       const docs = s.docs.map(d=>({id:d.id,...d.data()}))
                          .sort((a,b)=> window.__docTime(b) - window.__docTime(a));
       const cc={}; let brk=0;
@@ -584,6 +589,18 @@ const Dashboard = () => {
       setTimeout(()=>setLoading(false), Math.max(0, 150-elapsed));
     },err=>{
       console.warn('[dashboard news] snapshot error:', err?.code||err?.message||err);
+      // On error, try cache source instead
+      if(sourceHint==='server') {
+        db.collection('news').limit(500).onSnapshot({source:'cache'}, s=>{
+          const docs = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=> window.__docTime(b) - window.__docTime(a));
+          const cc={}; let brk=0;
+          docs.forEach(dt=>{ if(dt.category) cc[dt.category]=(cc[dt.category]||0)+1; if(dt.isBreaking) brk++; });
+          const rec = docs.slice(0,6);
+          window.__newsCache.dashRecent = rec;
+          setRecent(rec);
+          setStats(p=>({...p,news:docs.length,breaking:brk}));
+        }).catch(()=>{});
+      }
       setTimeout(()=>setLoading(false), 150);
     }));
 
@@ -1107,14 +1124,30 @@ const NewsManager = ({toast, initCat='all'}) => {
     // Unordered fetch + client-side sort. orderBy('timestamp') drops docs
     // missing that field; many legacy/auto-posted docs only have createdAt,
     // so they'd vanish from the list. __docTime() handles every variant.
-    const u = db.collection('news').limit(500).onSnapshot(
+
+    // Force server read on first load to get newly posted documents from automation pipeline
+    const firstLoad = !window.__newsCache.list?.length;
+    const sourceHint = firstLoad ? 'server' : 'default';
+
+    const u = db.collection('news').limit(500).onSnapshot({source:sourceHint},
       s=>{
         const docs = s.docs.map(d=>({id:d.id,...d.data()}))
                            .sort((a,b)=> window.__docTime(b) - window.__docTime(a));
         window.__newsCache.list = docs; window.__newsCache.ts = Date.now();
         setNews(docs); finishLoading();
       },
-      err=>{ console.warn('[news] snapshot error:', err?.code||err); finishLoading(); }
+      err=>{
+        console.warn('[news] snapshot error:', err?.code||err);
+        // On error, try cache source instead
+        if(sourceHint==='server') {
+          db.collection('news').limit(500).onSnapshot({source:'cache'}, s=>{
+            const docs = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=> window.__docTime(b) - window.__docTime(a));
+            window.__newsCache.list = docs;
+            setNews(docs);
+          }).catch(()=>{});
+        }
+        finishLoading();
+      }
     );
     return ()=>u();
   },[]);
