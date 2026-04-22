@@ -3,9 +3,9 @@ requests>=2.31.0
 feedparser>=6.0.11
 edge-tts>=6.1.9
 moviepy==1.0.3
-Pillow>=9.0.0
+Pillow>=9.0.0,<11.0.0
 numpy>=1.24.0,<2.0.0
-decorator<5.0
+decorator>=4.4.0,<5.0.0
 imageio>=2.9.0,<2.29.0
 imageio-ffmpeg>=0.4.9
 tqdm>=4.65.0
