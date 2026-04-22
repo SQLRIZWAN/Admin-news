@@ -61,6 +61,19 @@ def run(category: str, breaking_only: bool = False) -> bool:
 
     _banner(f"KWT News Auto Pipeline  |  {cfg['label']}")
 
+    # Validate required environment variables before starting pipeline
+    required_secrets = {
+        'FIREBASE_SERVICE_ACCOUNT': 'Firebase admin credentials',
+        'GEMINI_API_KEY': 'Gemini AI API key',
+        'PEXELS_API_KEY': 'Pexels video search API key',
+        'PIXABAY_API_KEY': 'Pixabay image/video search API key',
+    }
+    missing = [k for k, v in required_secrets.items() if not os.environ.get(k)]
+    if missing:
+        print(f"❌  Missing required secrets: {', '.join(missing)}")
+        print(f"    Configure these in GitHub repo → Settings → Secrets → Actions")
+        sys.exit(1)
+
     # ── 1. Automation enabled? ───────────────────────────────────────────────
     auto_cfg = get_automation_config(category)
     if not auto_cfg.get('enabled', True):
@@ -173,6 +186,8 @@ def run(category: str, breaking_only: bool = False) -> bool:
             dest_dir=str(clips_dir),
             max_clips=5,
         )
+        if not clip_paths:
+            print("   ⚠️  No video clips downloaded — video will use black background (continuing...)")
 
         # ── 7. Thumbnail from Pixabay ────────────────────────────────────────
         print("\n🖼️   Step 6 — Getting thumbnail...")
@@ -267,7 +282,9 @@ def run(category: str, breaking_only: bool = False) -> bool:
                 video_url=video_url,
                 thumbnail_url=thumbnail_url,
                 description=content[:1000],
-            ) or {}
+            )
+            if social_results is None:
+                social_results = {}
             if social_results:
                 successes = [r for r in social_results.values() if isinstance(r, dict) and r.get('success')]
                 if len(successes) == len(social_results):
@@ -278,6 +295,8 @@ def run(category: str, breaking_only: bool = False) -> bool:
                     social_status = 'failed'
         except Exception as e:
             print(f"   ⚠️  Social posting error (non-fatal): {e}")
+            import traceback
+            traceback.print_exc()
             social_status = 'failed'
             social_results = {'error': str(e)[:300]}
 

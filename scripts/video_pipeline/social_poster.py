@@ -291,14 +291,6 @@ PLATFORM_POSTERS = {
     'x':         post_to_x,
 }
 
-PLATFORM_ARGS = {
-    'youtube':   lambda acc, vp, title, desc, thumb: post_to_youtube(acc, vp, title, desc, thumb),
-    'instagram': lambda acc, vp, title, desc, thumb: post_to_instagram(acc, vp, title, desc, thumb),
-    'tiktok':    lambda acc, vp, title, desc, thumb: post_to_tiktok(acc, vp, title),
-    'facebook':  lambda acc, vp, title, desc, thumb: post_to_facebook(acc, vp, title, desc),
-    'x':         lambda acc, vp, title, desc, thumb: post_to_x(acc, vp, title),
-}
-
 
 def post_to_all_platforms(
     news_id: str,
@@ -347,11 +339,22 @@ def post_to_all_platforms(
 
     all_results = {}
     for platform in connected:
-        acc      = platform_accounts[platform]
-        poster   = PLATFORM_ARGS[platform]
+        acc = platform_accounts[platform]
+        poster = PLATFORM_POSTERS[platform]
         print(f"\n   Posting to {platform}...")
         try:
-            result = poster(acc, video_path, news_title, description, thumbnail_url)
+            if platform == 'youtube':
+                result = poster(acc, video_path, news_title, description, thumbnail_url)
+            elif platform == 'instagram':
+                result = poster(acc, video_path, description, thumbnail_url)
+            elif platform == 'tiktok':
+                result = poster(acc, video_path, news_title)
+            elif platform == 'facebook':
+                result = poster(acc, video_path, news_title, description)
+            elif platform == 'x':
+                result = poster(acc, video_path, news_title)
+            else:
+                result = {'success': False, 'error': f'Unknown platform: {platform}'}
         except Exception as e:
             result = {'success': False, 'error': str(e)[:300]}
 

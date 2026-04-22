@@ -158,9 +158,12 @@ def generate_tts(script: str, output_path: str, voice: str = 'hi-IN-MadhurNeural
         List of dicts: [{word, start, duration}, ...]
     """
     # Strip any JSON/code artifacts ONCE before any processing
+    original_script = script
     script = _clean_for_tts(script)
     if not script:
-        raise ValueError("Script is empty after cleaning — nothing to convert to speech")
+        raise ValueError(f"Script is empty after cleaning. Original: {original_script[:200]!r}")
+    if len(script.split()) < 10:
+        raise ValueError(f"Script too short ({len(script.split())} words). Need at least 10 words. Script: {script!r}")
     print(f"   🔊 TTS input (first 300): {script[:300]!r}")
 
     # Try SSML first (most natural), then plain text fallbacks.
