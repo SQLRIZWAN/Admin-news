@@ -188,8 +188,15 @@ jobs:
               echo ""
             done
             echo ""
-            echo "If you see **PERMISSION_DENIED / 403** → grant role **Firebase Admin** to the SA:"
-            echo "https://console.cloud.google.com/iam-admin/iam?project=kwt-news"
+            echo "**This is non-fatal.** The admin panel + automation pipeline keep running on the existing rules and indexes."
+            echo ""
+            echo "To enable future Firestore changes, grant role **Firebase Admin** to the SA \`$SA_CLIENT_EMAIL\`:"
+            echo "1. Open IAM (project pre-selected): https://console.cloud.google.com/iam-admin/iam?project=kwt-news"
+            echo "2. Find principal \`$SA_CLIENT_EMAIL\` → click pencil → **Add another role** → \`Firebase Admin\` → Save."
+            echo "3. Re-run this workflow: https://github.com/${GH_REPO}/actions/workflows/deploy.yml"
+            echo ""
+            echo "Index status: https://console.firebase.google.com/project/kwt-news/firestore/indexes"
+            echo "Rules:        https://console.firebase.google.com/project/kwt-news/firestore/rules"
           } > "$BODY"
 
           cat > /tmp/post.py <<'PYEOF'

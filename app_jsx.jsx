@@ -562,11 +562,14 @@ const Dashboard = () => {
 
   useEffect(()=>{
     const u=[]; const t0=Date.now();
-    // Server-side orderBy + limit — fast, scalable. Requires all news docs
-    // to have a `timestamp` field (backfill-timestamps.js handles legacy docs).
-    // Single-field orderBy doesn't need a composite index.
-    u.push(db.collection('news').orderBy('timestamp','desc').limit(100).onSnapshot(s=>{
-      const docs = s.docs.map(d=>({id:d.id,...d.data()}));
+    // Unordered fetch + client-side sort. We can't use server-side
+    // orderBy('timestamp') because Firestore silently drops docs missing that
+    // field — which hides legacy auto-posted items. Client-side sort via
+    // __docTime() falls back through createdAt/publishedAt/date/updatedAt so
+    // every doc stays visible.
+    u.push(db.collection('news').limit(500).onSnapshot(s=>{
+      const docs = s.docs.map(d=>({id:d.id,...d.data()}))
+                         .sort((a,b)=> window.__docTime(b) - window.__docTime(a));
       const cc={}; let brk=0;
       docs.forEach(dt=>{ if(dt.category) cc[dt.category]=(cc[dt.category]||0)+1; if(dt.isBreaking) brk++; });
       const rec = docs.slice(0,6);
@@ -1101,11 +1104,13 @@ const NewsManager = ({toast, initCat='all'}) => {
   useEffect(()=>{
     const t0 = Date.now();
     const finishLoading = ()=>{ setTimeout(()=>setLoading(false), Math.max(0, 150-(Date.now()-t0))); };
-    // Server-side orderBy + limit — fast and scalable. Legacy docs missing
-    // `timestamp` are covered by scripts/backfill-timestamps.js (one-shot).
-    const u = db.collection('news').orderBy('timestamp','desc').limit(200).onSnapshot(
+    // Unordered fetch + client-side sort. orderBy('timestamp') drops docs
+    // missing that field; many legacy/auto-posted docs only have createdAt,
+    // so they'd vanish from the list. __docTime() handles every variant.
+    const u = db.collection('news').limit(500).onSnapshot(
       s=>{
-        const docs = s.docs.map(d=>({id:d.id,...d.data()}));
+        const docs = s.docs.map(d=>({id:d.id,...d.data()}))
+                           .sort((a,b)=> window.__docTime(b) - window.__docTime(a));
         window.__newsCache.list = docs; window.__newsCache.ts = Date.now();
         setNews(docs); finishLoading();
       },
@@ -4309,16 +4314,15 @@ const MediaManager = ({toast}) => {
   },[]);
 
   // ── Firestore: auto-posted videos ────────────────────────────
-  // Fetch recent news (single-field orderBy needs no composite index) and
-  // client-side filter for autoPosted. Avoids needing a composite index
-  // that we can't always deploy.
+  // Unordered fetch + client-side sort + filter. Avoids needing a composite
+  // index AND avoids dropping autoPosted docs that happen to lack `timestamp`.
   useEffect(()=>{
-    const unsub = db.collection('news')
-      .orderBy('timestamp','desc').limit(200)
+    const unsub = db.collection('news').limit(500)
       .onSnapshot(snap=>{
         const auto = snap.docs
           .map(d=>({id:d.id,...d.data()}))
           .filter(n=>n.autoPosted===true)
+          .sort((a,b)=> window.__docTime(b) - window.__docTime(a))
           .slice(0,30);
         setVideos(auto);
         setLoadingVid(false);
