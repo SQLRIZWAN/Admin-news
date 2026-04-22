@@ -6081,12 +6081,12 @@ const AutomationPage = ({
     const testDb = async () => {
       setTesting(true);
       const results = [];
-      // 1) TRUE total — no filter, no orderBy, no limit. First try SERVER (to
-      //    detect rules/network issues), then fall back to CACHE (so we still
-      //    get a count even if the server read is blocked).
+      // 1) TRUE total — no filter, no orderBy. First try SERVER (to detect
+      //    rules/network issues), then fall back to CACHE. Limit to 1000 so
+      //    a huge collection + mobile network doesn't just time out.
       let serverOk = false;
       try {
-        const s = await db.collection('news').get({
+        const s = await db.collection('news').limit(1000).get({
           source: 'server'
         });
         serverOk = true;
@@ -6410,39 +6410,33 @@ const AutomationPage = ({
         color: '#f87171',
         lineHeight: 1.5
       }
-    }, r.err), r.indexUrl ? /*#__PURE__*/React.createElement("a", {
-      href: r.indexUrl,
-      target: "_blank",
-      rel: "noreferrer",
-      style: {
-        display: 'inline-block',
-        marginTop: 4,
-        fontSize: 11,
-        fontWeight: 700,
-        color: 'var(--accent)',
-        background: 'rgba(245,166,35,.1)',
-        border: '1px solid rgba(245,166,35,.3)',
-        borderRadius: 6,
-        padding: '4px 10px',
-        textDecoration: 'none'
-      }
-    }, "\uD83D\uDD27 Create Index in Firebase Console \u2192") : /*#__PURE__*/React.createElement("a", {
-      href: "https://console.firebase.google.com/project/kwt-news/firestore/indexes",
-      target: "_blank",
-      rel: "noreferrer",
-      style: {
-        display: 'inline-block',
-        marginTop: 4,
-        fontSize: 11,
-        fontWeight: 700,
-        color: 'var(--accent)',
-        background: 'rgba(245,166,35,.1)',
-        border: '1px solid rgba(245,166,35,.3)',
-        borderRadius: 6,
-        padding: '4px 10px',
-        textDecoration: 'none'
-      }
-    }, "\uD83D\uDD27 Open Firestore Indexes \u2192")))), dbStatus.every(r => r.ok) && /*#__PURE__*/React.createElement("div", {
+    }, r.err), (() => {
+      // Pick the right destination for this specific failure:
+      //   • missing index → firebase's auto-create index URL (in indexUrl)
+      //   • rules / perm-denied → rules page
+      //   • anything else → indexes listing
+      const url = r.indexUrl || 'https://console.firebase.google.com/project/kwt-news/firestore/indexes';
+      const isRules = /rules/i.test(url);
+      const isCreate = /\/indexes\?create_composite=/i.test(url);
+      const label = isRules ? '🛡️ Fix Security Rules in Firebase Console →' : isCreate ? '🔧 Create Index in Firebase Console →' : '🔧 Open Firestore Indexes →';
+      return /*#__PURE__*/React.createElement("a", {
+        href: url,
+        target: "_blank",
+        rel: "noreferrer",
+        style: {
+          display: 'inline-block',
+          marginTop: 4,
+          fontSize: 11,
+          fontWeight: 700,
+          color: 'var(--accent)',
+          background: 'rgba(245,166,35,.1)',
+          border: '1px solid rgba(245,166,35,.3)',
+          borderRadius: 6,
+          padding: '4px 10px',
+          textDecoration: 'none'
+        }
+      }, label);
+    })()))), dbStatus.every(r => r.ok) && /*#__PURE__*/React.createElement("div", {
       style: {
         padding: '10px',
         background: 'rgba(52,211,153,.08)',

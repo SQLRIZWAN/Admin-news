@@ -2440,12 +2440,12 @@ const AutomationPage = ({toast}) => {
         const testDb = async ()=>{
           setTesting(true);
           const results = [];
-          // 1) TRUE total — no filter, no orderBy, no limit. First try SERVER (to
-          //    detect rules/network issues), then fall back to CACHE (so we still
-          //    get a count even if the server read is blocked).
+          // 1) TRUE total — no filter, no orderBy. First try SERVER (to detect
+          //    rules/network issues), then fall back to CACHE. Limit to 1000 so
+          //    a huge collection + mobile network doesn't just time out.
           let serverOk = false;
           try{
-            const s = await db.collection('news').get({source:'server'});
+            const s = await db.collection('news').limit(1000).get({source:'server'});
             serverOk = true;
             let withTs=0, withoutTs=0, ai=0, auto=0, hidden=0, drafts=0;
             const cats = {};
@@ -2578,17 +2578,26 @@ const AutomationPage = ({toast}) => {
                     {!r.ok&&(
                       <div style={{marginTop:5}}>
                         {r.err&&<p style={{fontSize:10,color:'#f87171',lineHeight:1.5}}>{r.err}</p>}
-                        {r.indexUrl?(
-                          <a href={r.indexUrl} target="_blank" rel="noreferrer"
-                            style={{display:'inline-block',marginTop:4,fontSize:11,fontWeight:700,color:'var(--accent)',background:'rgba(245,166,35,.1)',border:'1px solid rgba(245,166,35,.3)',borderRadius:6,padding:'4px 10px',textDecoration:'none'}}>
-                            🔧 Create Index in Firebase Console →
-                          </a>
-                        ):(
-                          <a href="https://console.firebase.google.com/project/kwt-news/firestore/indexes" target="_blank" rel="noreferrer"
-                            style={{display:'inline-block',marginTop:4,fontSize:11,fontWeight:700,color:'var(--accent)',background:'rgba(245,166,35,.1)',border:'1px solid rgba(245,166,35,.3)',borderRadius:6,padding:'4px 10px',textDecoration:'none'}}>
-                            🔧 Open Firestore Indexes →
-                          </a>
-                        )}
+                        {(() => {
+                          // Pick the right destination for this specific failure:
+                          //   • missing index → firebase's auto-create index URL (in indexUrl)
+                          //   • rules / perm-denied → rules page
+                          //   • anything else → indexes listing
+                          const url = r.indexUrl || 'https://console.firebase.google.com/project/kwt-news/firestore/indexes';
+                          const isRules = /rules/i.test(url);
+                          const isCreate = /\/indexes\?create_composite=/i.test(url);
+                          const label = isRules
+                            ? '🛡️ Fix Security Rules in Firebase Console →'
+                            : isCreate
+                              ? '🔧 Create Index in Firebase Console →'
+                              : '🔧 Open Firestore Indexes →';
+                          return (
+                            <a href={url} target="_blank" rel="noreferrer"
+                              style={{display:'inline-block',marginTop:4,fontSize:11,fontWeight:700,color:'var(--accent)',background:'rgba(245,166,35,.1)',border:'1px solid rgba(245,166,35,.3)',borderRadius:6,padding:'4px 10px',textDecoration:'none'}}>
+                              {label}
+                            </a>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
