@@ -6001,23 +6001,53 @@ const AutomationPage = ({
   }, showAllLogs ? '▲ Show Less' : `▼ View All (${logs.length} entries)`))), (() => {
     const [fixing, setFixing] = useState(false);
     const publishAll = async () => {
-      if (!confirm('This will set published:true and hidden:false on ALL news articles. Continue?')) return;
+      if (!confirm('This will set published:true, hidden:false, status:"published" on ALL news articles, and backfill any missing timestamp. Continue?')) return;
       setFixing(true);
       try {
-        // Get all news articles
-        const all = await db.collection('news').get();
-        const docs = all.docs;
-        // Batch update all in groups of 400
+        // Fetch via same fallback chain as diagnostic — works even if
+        // unfiltered .get() is blocked by rules or mobile network times out.
+        let docs = [];
+        try {
+          docs = (await db.collection('news').limit(1000).get()).docs;
+        } catch (_) {
+          const cats = ['world', 'kuwait', 'kuwait-jobs', 'kuwait-offers', 'funny-news-meme'];
+          for (const c of cats) {
+            try {
+              const s = await db.collection('news').where('category', '==', c).limit(500).get();
+              s.docs.forEach(d => docs.push(d));
+            } catch (_) {}
+          }
+        }
+        if (!docs.length) {
+          toast.show('No articles found to publish', 'error');
+          setFixing(false);
+          return;
+        }
+        const SERVER_TS = firebase.firestore.FieldValue.serverTimestamp();
+        let fixed = 0,
+          tsAdded = 0;
         for (let i = 0; i < docs.length; i += 400) {
           const batch = db.batch();
-          docs.slice(i, i + 400).forEach(d => batch.update(d.ref, {
-            hidden: false,
-            published: true,
-            status: 'published'
-          }));
+          docs.slice(i, i + 400).forEach(d => {
+            const x = d.data();
+            const patch = {
+              hidden: false,
+              published: true,
+              status: 'published'
+            };
+            if (!x.timestamp) {
+              patch.timestamp = x.createdAt || SERVER_TS;
+              tsAdded++;
+            }
+            if (!x.createdAt) {
+              patch.createdAt = x.timestamp || SERVER_TS;
+            }
+            batch.update(d.ref, patch);
+            fixed++;
+          });
           await batch.commit();
         }
-        toast.show(`✅ Published all ${docs.length} articles!`, 'success');
+        toast.show(`✅ Fixed ${fixed} articles · ${tsAdded} timestamps backfilled`, 'success');
       } catch (e) {
         toast.show('Error: ' + e.message, 'error');
       }
@@ -6081,15 +6111,54 @@ const AutomationPage = ({
     const testDb = async () => {
       setTesting(true);
       const results = [];
-      // 1) TRUE total — no filter, no orderBy. First try SERVER (to detect
-      //    rules/network issues), then fall back to CACHE. Limit to 1000 so
-      //    a huge collection + mobile network doesn't just time out.
+      // 1) TRUE total — try multiple strategies so we don't misreport as
+      //    "BLOCKED" just because one query path failed. Order:
+      //    a) unfiltered .limit(1000) from server (fastest, full scan)
+      //    b) retry once after 1.5s (handles transient mobile network)
+      //    c) per-category filtered queries (works even when rules deny
+      //       full-collection scans — filtered reads are usually allowed).
       let serverOk = false;
+      let serverDocs = null;
+      let serverDetail = '';
+      const scanFull = async () => (await db.collection('news').limit(1000).get({
+        source: 'server'
+      })).docs;
       try {
-        const s = await db.collection('news').limit(1000).get({
-          source: 'server'
-        });
+        serverDocs = await scanFull();
         serverOk = true;
+      } catch (_) {
+        await new Promise(r => setTimeout(r, 1500));
+        try {
+          serverDocs = await scanFull();
+          serverOk = true;
+          serverDetail = '(succeeded on retry — first attempt timed out)';
+        } catch (_2) {
+          // Fallback: sum per-category filtered reads. Filtered queries
+          // tend to succeed even when a full-collection scan is denied.
+          try {
+            const cats = ['world', 'kuwait', 'kuwait-jobs', 'kuwait-offers', 'funny-news-meme'];
+            const all = [];
+            for (const c of cats) {
+              const s = await db.collection('news').where('category', '==', c).limit(500).get({
+                source: 'server'
+              });
+              s.docs.forEach(d => all.push(d));
+            }
+            serverDocs = all;
+            serverOk = true;
+            serverDetail = '(via per-category fallback — full-collection scan was blocked)';
+          } catch (e3) {
+            results.push({
+              name: '🔢 Total on SERVER (BLOCKED)',
+              ok: false,
+              count: 0,
+              err: `All server reads failed. Likely network/rules issue. — ${e3.message?.slice(0, 160)}`,
+              indexUrl: 'https://console.firebase.google.com/project/kwt-news/firestore/rules'
+            });
+          }
+        }
+      }
+      if (serverOk && serverDocs) {
         let withTs = 0,
           withoutTs = 0,
           ai = 0,
@@ -6097,7 +6166,7 @@ const AutomationPage = ({
           hidden = 0,
           drafts = 0;
         const cats = {};
-        s.docs.forEach(d => {
+        serverDocs.forEach(d => {
           const x = d.data();
           if (x.timestamp) withTs++;else withoutTs++;
           if (x.aiGenerated) ai++;
@@ -6109,22 +6178,14 @@ const AutomationPage = ({
         results.push({
           name: `🔢 Total on SERVER (live Firestore)`,
           ok: true,
-          count: s.size,
-          detail: `timestamp: ${withTs} · missing-timestamp: ${withoutTs} · aiGenerated: ${ai} · autoPosted: ${auto} · hidden: ${hidden} · drafts: ${drafts}`
+          count: serverDocs.length,
+          detail: `${serverDetail ? serverDetail + ' · ' : ''}timestamp: ${withTs} · missing-timestamp: ${withoutTs} · aiGenerated: ${ai} · autoPosted: ${auto} · hidden: ${hidden} · drafts: ${drafts}`
         });
         results.push({
           name: `📂 Server per-category count`,
           ok: true,
           count: Object.keys(cats).length,
           detail: Object.entries(cats).map(([k, v]) => `${k}:${v}`).join(' · ') || '(no category field on any doc)'
-        });
-      } catch (e) {
-        results.push({
-          name: '🔢 Total on SERVER (BLOCKED)',
-          ok: false,
-          count: 0,
-          err: `Server read failed. Reason: (a) Firestore security rules deny read for your account, or (b) no network. Fix rules: allow read:if request.auth != null;  — ${e.message?.slice(0, 160)}`,
-          indexUrl: 'https://console.firebase.google.com/project/kwt-news/firestore/rules'
         });
       }
       // 2) Fallback: cache read (shows what the UI actually has locally).
