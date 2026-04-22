@@ -6197,7 +6197,13 @@ const AutomationPage = ({
             err: null
           });
         } catch (e) {
-          const indexUrl = e.message?.match(/https:\/\/console\.firebase[^\s]*/)?.[0] || null;
+          // Firestore's missing-index error embeds a console URL. Strip
+          // trailing punctuation so the <a href> isn't broken, and
+          // swap the `_` placeholder project for the real one.
+          let indexUrl = e.message?.match(/https:\/\/console\.firebase\.google\.com\/[^\s"')\]]+/)?.[0] || null;
+          if (indexUrl) {
+            indexUrl = indexUrl.replace(/[.,;:!?)\]]+$/, '').replace('/project/_/', '/project/kwt-news/');
+          }
           results.push({
             name: t.name,
             ok: false,
