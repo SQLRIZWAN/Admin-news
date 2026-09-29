@@ -1,0 +1,247 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  Trending Store + Admin panel — shared Firebase project
+    //  (treding-store-2).  Paste into Firebase Console → Firestore → Rules.
+    //
+    //  Goals:
+    //   * a signed-in user can only READ his own documents
+    //   * only admins can approve deposits / withdrawals / KYC / reports
+    //   * only admins can write admin/* (payout addresses, rate, SQL Ai key)
+    //   * guests can still browse config, plans and instruments
+    //
+    //  NOTE: `isAdmin()` is always the FIRST clause of an OR so an admin read
+    //  can never fail on a document that happens to miss a field.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ── helpers ──────────────────────────────────────────────────────
+    function signedIn() { return request.auth != null; }
+    function uid()      { return request.auth.uid; }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.email in
+        ['sql@gmail.com', 'admin@trendingstore.com'];
+    }
+
+    function isOwner(id) { return signedIn() && request.auth.uid == id; }
+
+    // only valid inside `allow update` (resource.data exists there)
+    function changed()  { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function only(keys) { return changed().hasOnly(keys); }
+    function none(keys) { return !changed().hasAny(keys); }
+
+    // ── public platform config (guests read these too) ───────────────
+    match /website/config {
+      allow get, list: if true;
+      allow write: if isAdmin();
+    }
+
+    match /forexInstruments/{docId} {
+      allow get, list: if true;
+      allow write: if isAdmin();
+    }
+
+    match /investPlans/{docId} {
+      allow get, list: if true;
+      allow write: if isAdmin();
+    }
+
+    // ── admin/* ──────────────────────────────────────────────────────
+    // admin/config     → UPI, USDT address, INR rate, geminiApiKey → signed-in only
+    // admin/forexConfig → leverage, oneClickTrading etc.            → public read
+    match /admin/{docId} {
+      allow list: if false;
+      allow get: if isAdmin() || docId != 'config' || signedIn();
+      allow create: if isAdmin()
+        || (signedIn() && docId == 'forexConfig'
+            && request.resource.data.keys().hasOnly(['oneClickTrading']));
+      allow update: if isAdmin()
+        || (signedIn() && docId == 'forexConfig' && only(['oneClickTrading']));
+      allow delete: if isAdmin();
+    }
+
+    // ── referral code → uid index (public lookup, owner writes own) ──
+    match /refCodes/{code} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isAdmin()
+        || (signedIn() && request.resource.data.uid == uid());
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.uid == uid());
+      allow delete: if isAdmin();
+    }
+
+    // ── dead code: nothing ever writes an OTP, so lock it completely ─
+    match /passwordOTPs/{docId} {
+      allow read, write: if false;
+    }
+
+    // ── users ────────────────────────────────────────────────────────
+    match /users/{id} {
+      allow get: if isOwner(id) || isAdmin();
+      // NO list for normal users — this is what used to leak every profile.
+      allow list: if isAdmin();
+      allow create: if isOwner(id);
+      allow update: if isAdmin()
+        // owner may edit his own profile / wallet, but never his role
+        || (isOwner(id) && none(['isAdmin', 'role', 'banned', 'disabled',
+                                 'email', 'emailVerified', 'uid']))
+        // referral commission: the depositor's client credits L1/L2 — but only
+        // that one field, only on somebody else, and never downwards.
+        || (signedIn() && id != uid() && only(['referralBalance'])
+            && request.resource.data.get('referralBalance', 0)
+               >= resource.data.get('referralBalance', 0));
+      allow delete: if isAdmin();
+
+      // spot wallet per coin (users/{uid}/spotAssets/{COIN})
+      match /spotAssets/{coin} {
+        allow read, write: if isOwner(id) || isAdmin();
+      }
+    }
+
+    // ── money in / out (status can only be changed by an admin) ──────
+    match /payments/{id} {
+      allow create: if signedIn()
+        && request.resource.data.uid == uid()
+        && request.resource.data.status == 'pending';
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.uid == uid() && only([
+             'referralRewarded', 'rewardedAt', 'l1CommissionPaid',
+             'l2CommissionPaid', 'userFirstDepositBonus', 'fastReferralBonus']));
+      allow delete: if isAdmin();
+    }
+
+    match /withdrawals/{id} {
+      allow create: if signedIn()
+        && request.resource.data.uid == uid()
+        && request.resource.data.status == 'pending';
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update, delete: if isAdmin();
+    }
+
+    match /transfers/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update, delete: if isAdmin();
+    }
+
+    match /investments/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow delete: if isAdmin();
+    }
+
+    match /kyc/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update, delete: if isAdmin();
+    }
+
+    match /reports/{id} {
+      // support form guest mode se bhi report bhejta hai
+      allow create: if request.resource.data.keys().hasAll(['uid', 'subject'])
+        && (request.auth == null || request.resource.data.uid == uid());
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update, delete: if isAdmin();
+    }
+
+    // ── trading ──────────────────────────────────────────────────────
+    match /positions/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow delete: if isAdmin();
+    }
+
+    match /cfdPositions/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow delete: if isAdmin();
+    }
+
+    match /cfdOrders/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow delete: if isAdmin();
+    }
+
+    match /trades/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update, delete: if isAdmin();
+    }
+
+    match /cfdTrades/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow get, list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow update, delete: if isAdmin();
+    }
+
+    // ── notifications (uid == 'all' = broadcast, users only read it) ─
+    match /notifications/{id} {
+      allow get, list: if isAdmin() || (signedIn() && (
+          resource.data.uid == uid() || resource.data.uid == 'all'));
+      allow create: if isAdmin()
+        || (signedIn() && (
+              request.resource.data.uid == uid()
+              || request.resource.data.get('type', '')
+                   in ['referral_reward', 'referral_reward_l2']));
+      allow update: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow delete: if isAdmin();
+    }
+
+    // ── referrals ────────────────────────────────────────────────────
+    match /referrals/{id} {
+      allow create: if signedIn() && request.resource.data.referredId == uid();
+      allow get, list: if isAdmin() || (signedIn() && (
+          resource.data.referrerId == uid()
+          || resource.data.referredId == uid()
+          || resource.data.level2ReferrerId == uid()));
+      allow update: if isAdmin() || (signedIn() && resource.data.referredId == uid());
+      allow delete: if isAdmin();
+    }
+
+    // ── live chat (chats/{uid} + chats/{uid}/messages) ───────────────
+    match /chats/{id} {
+      allow create, get, update: if isOwner(id) || isAdmin();
+      allow list: if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow delete: if isAdmin();
+
+      match /messages/{msgId} {
+        allow read, create: if isOwner(id) || isAdmin();
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // ── write-once audit trails ──────────────────────────────────────
+    match /audit/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow read, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /liquidations/{id} {
+      allow create: if signedIn() && request.resource.data.uid == uid();
+      allow read, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /adminLogs/{id} {
+      allow read, create, update, delete: if isAdmin();
+    }
+  }
+}
