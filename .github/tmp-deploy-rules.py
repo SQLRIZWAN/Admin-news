@@ -62,12 +62,9 @@ def call(method, url, payload=None):
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode()
 
-st, body = call("GET", "https://firebaserules.googleapis.com/v1/projects/%s/firestore/releases" % TARGET_PROJECT)
+st, body = call("GET", "https://firebaserules.googleapis.com/v1/projects/%s/releases" % TARGET_PROJECT)
 log("PROBE GET releases -> HTTP %s" % st)
-log("PROBE body: " + body[:800])
-if st >= 400:
-    log("RESULT=NO_ACCESS - service account cannot touch %s" % TARGET_PROJECT)
-    sys.exit(0)
+log("PROBE body: " + body[:500])
 
 payload = {"source": {"files": [{"path": "firestore.rules", "content": rules_text}]}}
 st, body = call("POST", "https://firebaserules.googleapis.com/v1/projects/%s/rulesets" % TARGET_PROJECT, payload)
@@ -80,7 +77,7 @@ log("RULESET=%s" % ruleset_name)
 
 st, body = call(
     "PATCH",
-    "https://firebaserules.googleapis.com/v1/projects/%s/firestore/releases/cloud.firestore?updateMask=rulesetName" % TARGET_PROJECT,
+    "https://firebaserules.googleapis.com/v1/projects/%s/releases/cloud.firestore?updateMask=rulesetName" % TARGET_PROJECT,
     {"rulesetName": ruleset_name})
 log("RELEASE -> HTTP %s" % st)
 log("RELEASE body: " + body[:700])
