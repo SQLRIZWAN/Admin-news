@@ -66,7 +66,7 @@ st, body = call("GET", "https://firebaserules.googleapis.com/v1/projects/%s/rele
 log("PROBE GET releases -> HTTP %s" % st)
 log("PROBE body: " + body[:500])
 
-payload = {"source": {"files": [{"path": "firestore.rules", "content": rules_text}]}}
+payload = {"source": {"files": [{"name": "firestore.rules", "content": rules_text}]}}
 st, body = call("POST", "https://firebaserules.googleapis.com/v1/projects/%s/rulesets" % TARGET_PROJECT, payload)
 log("CREATE ruleset -> HTTP %s" % st)
 if st >= 400:
